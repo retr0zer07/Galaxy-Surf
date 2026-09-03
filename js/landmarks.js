@@ -242,6 +242,31 @@ export class Landmarks {
         });
         break;
       }
+      case 'planet': {
+        const host = this.#flare(R * 1.55, poi.star || '#ff7050', 0.9);
+        host.position.set(-R * 0.72, 0, 0);
+        g.add(host);
+
+        const planet = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: this.starTex, color: new THREE.Color(tint[0]),
+          transparent: true, opacity: 0.98,
+          blending: THREE.NormalBlending, depthWrite: false
+        }));
+        planet.position.set(R * 0.54, 0, 0);
+        planet.scale.setScalar(R * 1.5);
+        g.add(planet);
+
+        const orbit = new THREE.Mesh(
+          new THREE.RingGeometry(R * 0.43, R * 0.45, 64),
+          new THREE.MeshBasicMaterial({
+            color: new THREE.Color(tint[1] || tint[0]), transparent: true,
+            opacity: 0.3, side: THREE.DoubleSide, depthWrite: false
+          })
+        );
+        orbit.rotation.x = Math.PI / 2;
+        g.add(orbit);
+        break;
+      }
       case 'supergiant': {
         g.add(this.#flare(R * 3.4, poi.stars[0], 0.9));
         g.add(this.#flare(R * 1.5, '#ffd0a8', 0.75));

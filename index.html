@@ -509,6 +509,36 @@ const POIS = [
     desc: 'Si ocupara el lugar del Sol, su superficie engulliría la órbita de Júpiter. Es una supergigante en fase terminal: explotará como supernova en los próximos 100 000 años y brillará como la Luna llena.',
     facts: [['Radio', '~ 764 R☉'], ['Masa', '16.5 M☉'], ['Tipo', 'M1-2 Ia-ab'], ['Temperatura', '3 600 K'], ['Supernova', '< 100 000 años']]
   },
+  {
+    id: 'proximab', name: 'Próxima Centauri b', tag: 'EXOPLANETA ROCOSO',
+    category: 'sistema', ly: 4.24, l: 313.9, b: -1.7,
+    desc: 'Un planeta rocoso de masa parecida a la Tierra en la zona habitable de la estrella más cercana al Sol. Completa una órbita en 11,2 días y recibe una cantidad de energía comparable a la terrestre, aunque las fulguraciones de su estrella son un desafío para su atmósfera.',
+    facts: [['Masa mínima', '1.07 M⊕'], ['Periodo orbital', '11.186 días'], ['Semieje mayor', '0.0485 UA'], ['Estrella', 'Próxima Centauri'], ['Descubierto', '2016']]
+  },
+  {
+    id: 'barnard', name: 'Estrella de Barnard', tag: 'ENANA ROJA',
+    category: 'sistema', ly: 5.96, l: 31.0, b: 14.1,
+    desc: 'La estrella individual más cercana después del Sol y el sistema de Alfa Centauri. Se desplaza por el cielo más rápido que cualquier otra estrella conocida: recorrería el diámetro aparente de la Luna en apenas 180 años.',
+    facts: [['Tipo', 'M4.0V'], ['Masa', '0.16 M☉'], ['Movimiento propio', '10.3″ / año'], ['Edad', '7-12 Ga'], ['Planeta candidato', 'Barnard b']]
+  },
+  {
+    id: 'wolf359', name: 'Wolf 359', tag: 'ENANA ROJA',
+    category: 'sistema', ly: 7.86, l: 244.0, b: 56.2,
+    desc: 'Una de las estrellas más débiles y cercanas: emite solo una cienmilésima parte de la luz visible del Sol. Aun así, posee al menos dos planetas candidatos detectados por velocidad radial.',
+    facts: [['Tipo', 'M6V'], ['Masa', '0.09 M☉'], ['Luminosidad', '0.0009 L☉'], ['Planetas', '2 candidatos'], ['Magnitud', '+13.5']]
+  },
+  {
+    id: 'vega', name: 'Vega', tag: 'ESTRELLA CON DISCO DE POLVO',
+    category: 'sistema', ly: 25.04, l: 67.45, b: 19.24,
+    desc: 'Durante siglos fue la estrella polar y volverá a serlo en unos 12 000 años. Rota tan rápido que está achatada: su ecuador gira a 274 km/s. Un disco de polvo frío a su alrededor revela restos de formación planetaria.',
+    facts: [['Tipo', 'A0V'], ['Masa', '2.14 M☉'], ['Rotación', '274 km/s'], ['Disco', 'infrarrojo'], ['Magnitud', '+0.03']]
+  },
+  {
+    id: 'polaris', name: 'Polaris', tag: 'CEFEIDA · SISTEMA TRIPLE',
+    category: 'sistema', ly: 433, l: 123.3, b: 26.5,
+    desc: 'La actual estrella polar es una cefeida cuya pulsación de 3,97 días permite medir distancias cósmicas. El sistema incluye una compañera cercana y otra mucho más distante, visible con telescopio.',
+    facts: [['Tipo', 'F7 Ib'], ['Estrellas', '3'], ['Pulsación', '3.97 días'], ['Masa', '5.4 M☉'], ['Magnitud', '+1.98']]
+  },
 
   /* ---------------- Nebulosas ---------------- */
   {
@@ -611,6 +641,12 @@ const POIS = [
     desc: 'La fuente de radio más brillante del cielo fuera del Sistema Solar. Su luz llegó a la Tierra hacia 1690 casi sin ser vista, oculta tras el polvo interestelar. Sigue expandiéndose a 6 000 km/s.',
     facts: [['Supernova', '~ 1690'], ['Expansión', '6 000 km/s'], ['Diámetro', '10 ly'], ['Remanente', 'estrella de neutrones']]
   },
+  {
+    id: 'sn1987a', name: 'SN 1987A', tag: 'SUPERNOVA OBSERVADA',
+    category: 'remanente', ly: 168000, l: 279.7, b: -31.9,
+    desc: 'La supernova más cercana observada desde 1604. Explosión de una supergigante azul en la Gran Nube de Magallanes; sus neutrinos llegaron a la Tierra tres horas antes que la luz y confirmaron cómo colapsan los núcleos estelares.',
+    facts: [['Explosión', '23 feb 1987'], ['Galaxia', 'Gran Nube de Magallanes'], ['Progenitora', 'Sanduleak −69° 202'], ['Neutrinos', '24 detectados'], ['Anillo', 'iluminándose']]
+  },
 
   /* ---------------- Exóticos ---------------- */
   {
@@ -624,6 +660,18 @@ const POIS = [
     category: 'exotico', ly: 42000, l: 10.0, b: -0.24,
     desc: 'La estrella de neutrones con el campo magnético más intenso conocido: mil billones de veces el terrestre. En 2004 emitió un destello que en 0,2 segundos liberó más energía que el Sol en 150 000 años y alteró la ionosfera terrestre.',
     facts: [['Campo magnético', '2×10¹¹ T'], ['Rotación', '7.5 s'], ['Destello', '27 dic 2004'], ['Diámetro', '~ 20 km']]
+  },
+  {
+    id: 'm87star', name: 'M87*', tag: 'AGUJERO NEGRO SUPERMASIVO',
+    category: 'exotico', ly: 53500000, l: 283.8, b: 74.5,
+    desc: 'El primer agujero negro fotografiado por la humanidad. Tiene una masa de 6 500 millones de soles y lanza un chorro relativista de partículas que se extiende miles de años luz desde la galaxia elíptica M87.',
+    facts: [['Masa', '6.5×10⁹ M☉'], ['Distancia', '53.5 Mly'], ['Imagen EHT', '2019'], ['Chorro', '~ 5 000 ly'], ['Galaxia', 'M87']]
+  },
+  {
+    id: 'westerlund1', name: 'Westerlund 1', tag: 'SUPERCÚMULO ESTELAR',
+    category: 'exotico', ly: 13000, l: 339.55, b: -0.4,
+    desc: 'El cúmulo estelar joven más masivo de la Vía Láctea. En un volumen de apenas seis años luz reúne cientos de estrellas masivas, varias de ellas supergigantes amarillas, rojas y azules que terminarán como supernovas.',
+    facts: [['Masa', '~ 50 000 M☉'], ['Edad', '3.5-5 Ma'], ['Diámetro', '~ 6 ly'], ['Estrellas masivas', '> 100'], ['Tipo', 'supercúmulo']]
   },
 
   /* ---------------- Estructuras ---------------- */
@@ -668,9 +716,14 @@ const DEFAULT_SIZE = {
 /* Representación visual de cada destino en la vista galáctica */
 const SHAPES = {
   alphacen: { shape: 'multi', size: 0.26, stars: ['#fff4e0', '#ffd9a0', '#ff8a6a'] },
+  proximab: { shape: 'planet', size: 0.24, tint: ['#6fa8ff', '#4c6da8'], star: '#ff7050' },
+  barnard: { shape: 'multi', size: 0.23, stars: ['#ff7650'] },
+  wolf359: { shape: 'multi', size: 0.2, stars: ['#e94f35'] },
   sirius: { shape: 'multi', size: 0.24, stars: ['#dbe6ff', '#ffffff'] },
   trappist: { shape: 'multi', size: 0.18, stars: ['#ff7a52'] },
   betelgeuse: { shape: 'supergiant', size: 0.42, stars: ['#ff6a3a'] },
+  vega: { shape: 'multi', size: 0.28, stars: ['#dce8ff'] },
+  polaris: { shape: 'multi', size: 0.28, stars: ['#fff1cc', '#dce8ff'] },
 
   orion: { shape: 'nebula', size: 1.0, tint: ['#ff6fae', '#ff9ad4', '#6fa8ff'] },
   horsehead: { shape: 'dark', size: 0.7, tint: ['#c8434f', '#7a2230'] },
@@ -690,9 +743,12 @@ const SHAPES = {
   crab: { shape: 'snr', size: 0.9, tint: ['#8affc8', '#6fb0ff'], pulsar: true },
   vela: { shape: 'snr', size: 1.0, tint: ['#7affd8', '#a8f0ff'], pulsar: true },
   casa: { shape: 'snr', size: 0.85, tint: ['#ffb06f', '#8affc8'] },
+  sn1987a: { shape: 'snr', size: 0.92, tint: ['#8ac6ff', '#ffb0d0'], pulsar: true },
 
   cygx1: { shape: 'blackhole', size: 0.5, tint: ['#ff9a4a', '#dbe6ff'] },
   magnetar: { shape: 'magnetar', size: 0.35, tint: ['#ff7a9c'] },
+  m87star: { shape: 'blackhole', size: 0.7, tint: ['#ffb05a', '#dbe6ff'] },
+  westerlund1: { shape: 'globular', size: 1.05, tint: ['#c5dcff'] },
 
   orionarm: { shape: 'arm', size: 3.2, tint: ['#9fc9ff'] },
   localbubble: { shape: 'bubble', size: 2.2, tint: ['#6fd0ff'] },
@@ -1669,6 +1725,31 @@ class Landmarks {
           f.position.set(Math.cos(a) * R * 0.45 * (i ? 1 : 0), 0, Math.sin(a) * R * 0.45 * (i ? 1 : 0));
           g.add(f);
         });
+        break;
+      }
+      case 'planet': {
+        const host = this.#flare(R * 1.55, poi.star || '#ff7050', 0.9);
+        host.position.set(-R * 0.72, 0, 0);
+        g.add(host);
+
+        const planet = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: this.starTex, color: new THREE.Color(tint[0]),
+          transparent: true, opacity: 0.98,
+          blending: THREE.NormalBlending, depthWrite: false
+        }));
+        planet.position.set(R * 0.54, 0, 0);
+        planet.scale.setScalar(R * 1.5);
+        g.add(planet);
+
+        const orbit = new THREE.Mesh(
+          new THREE.RingGeometry(R * 0.43, R * 0.45, 64),
+          new THREE.MeshBasicMaterial({
+            color: new THREE.Color(tint[1] || tint[0]), transparent: true,
+            opacity: 0.3, side: THREE.DoubleSide, depthWrite: false
+          })
+        );
+        orbit.rotation.x = Math.PI / 2;
+        g.add(orbit);
         break;
       }
       case 'supergiant': {
