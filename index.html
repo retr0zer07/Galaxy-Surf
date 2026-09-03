@@ -3077,6 +3077,11 @@ controls.dampingFactor = 0.06;
 controls.rotateSpeed = 0.55;
 controls.zoomSpeed = 0.9;
 controls.panSpeed = 0.6;
+controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+
+// El botón derecho se reserva para desplazar la vista, no para el menú del navegador.
+canvas.addEventListener('contextmenu', event => event.preventDefault());
 
 const ui = new UI();
 const raycaster = new THREE.Raycaster();
@@ -3155,7 +3160,7 @@ function setupGalaxyMode(initial = false) {
   controls.minDistance = 0.5;
   controls.maxDistance = 400;
   controls.target.set(0, 0, 0);
-  controls.enablePan = false;
+  controls.enablePan = true;
 
   if (initial) {
     camera.position.set(0, 92, 128);
