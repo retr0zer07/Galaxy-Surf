@@ -520,6 +520,7 @@ function enterDestination(poi) {
 
   state.transitioning = true;
   state.destination = poi;
+  document.getElementById('btn-local-group').classList.add('hidden');
   discoveries.record(poi.id, 'explored');
   ui.hidePanel();
 
