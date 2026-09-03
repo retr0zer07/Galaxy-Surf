@@ -11,6 +11,7 @@ import { SolarSystem } from './solar.js';
 import { BlackHole } from './blackhole.js';
 import { OrionNebula } from './orion.js';
 import { LocalGroup } from './localgroup.js';
+import { Discoveries } from './discoveries.js';
 import { UI } from './ui.js';
 import { POIS, CATEGORIES, SUN } from './data.js';
 import { easeInOut, clamp } from './utils.js';
@@ -50,6 +51,7 @@ let solar = null;
 let blackhole = null;
 let orion = null;
 let localGroup = null;
+let discoveries = null;
 let scene = null;
 let composer, bloom, renderPass;
 
@@ -93,6 +95,8 @@ function boot() {
   localGroup = new LocalGroup();
   localGroupScene.add(localGroup.group);
 
+  discoveries = new Discoveries(POIS, CATEGORIES);
+
   scene = galaxyScene;
 
   renderPass = new RenderPass(scene, camera);
@@ -108,7 +112,7 @@ function boot() {
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, discoveries, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -134,7 +138,6 @@ function setupGalaxyMode(initial = false) {
   }
 
   ui.setMode('galaxy');
-  document.getElementById('btn-local-group').classList.remove('hidden');
   document.getElementById('btn-back').lastChild.textContent = ' Volver a la galaxia';
   ui.setContext('Vía Láctea · Galaxia espiral barrada SBbc');
   ui.setScale('100 000 ly');
@@ -186,6 +189,7 @@ function poiMarker(poi) {
 
 function selectPOI(poi) {
   state.selected = poi;
+  discoveries.record(poi.id, 'observed');
   applyIsolation();
   ui.setTarget(poi.name);
   ui.setNavCurrent(poi.id, poi.name);
@@ -368,7 +372,6 @@ function setupLocalGroupMode() {
   controls.enablePan = true;
 
   ui.setMode('localgroup');
-  document.getElementById('btn-local-group').classList.add('hidden');
   document.getElementById('btn-back').lastChild.textContent = ' Explorar la Vía Láctea';
   ui.setContext('Grupo Local · ~ 60 galaxias ligadas gravitacionalmente');
   ui.setScale('~ 5 millones de años luz');
@@ -460,6 +463,7 @@ function enterDestination(poi) {
 
   state.transitioning = true;
   state.destination = poi;
+  discoveries.record(poi.id, 'explored');
   ui.hidePanel();
 
   flyTo(poiWorldPosition(poi), 2.2, 1.5, null, () => {

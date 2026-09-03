@@ -52,6 +52,23 @@
   Grupo Local
 </button>
 
+<button id="btn-discoveries" title="Bitácora de descubrimientos">
+  <svg viewBox="0 0 24 24"><path d="M5 3h11a3 3 0 0 1 3 3v15H8a3 3 0 0 1-3-3V3z"/><path d="M8 7h7M8 11h7M8 15h4"/></svg>
+  <span class="hidden" id="discovery-badge">0</span>
+</button>
+
+<aside id="discoveries" class="hidden">
+  <div class="discoveries-head">
+    <div><span>BITÁCORA</span><h2>Descubrimientos</h2></div>
+    <button id="discoveries-close" aria-label="Cerrar">&times;</button>
+  </div>
+  <p id="discovery-summary"></p>
+  <div id="discovery-progress"></div>
+  <h3>Últimos registros</h3>
+  <div id="discovery-recent"></div>
+  <button id="discoveries-reset">Restablecer bitácora</button>
+</aside>
+
 <!-- Panel lateral de información -->
 <aside id="panel" class="hidden">
   <button id="panel-close" aria-label="Cerrar">&times;</button>
@@ -3144,6 +3161,121 @@ class LocalGroup {
   get pickables() { return this.bodies; }
 }
 
+/* ========== discoveries.js ========== */
+const STORAGE_KEY = 'galaxy-surf-discoveries-v1';
+
+class Discoveries {
+  constructor(pois, categories) {
+    this.pois = pois;
+    this.categories = categories.filter(category => category.id !== 'all');
+    this.byId = new Map(pois.map(poi => [poi.id, poi]));
+    this.data = this.#load();
+
+    this.button = document.getElementById('btn-discoveries');
+    this.panel = document.getElementById('discoveries');
+    this.summary = document.getElementById('discovery-summary');
+    this.progress = document.getElementById('discovery-progress');
+    this.recent = document.getElementById('discovery-recent');
+    this.badge = document.getElementById('discovery-badge');
+
+    this.button.onclick = () => this.toggle();
+    document.getElementById('discoveries-close').onclick = () => this.toggle(false);
+    document.getElementById('discoveries-reset').onclick = () => this.reset();
+    this.render();
+  }
+
+  #load() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      return saved && typeof saved === 'object' ? saved : {};
+    } catch {
+      return {};
+    }
+  }
+
+  #save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+  }
+
+  record(id, level = 'observed') {
+    const poi = this.byId.get(id);
+    if (!poi) return;
+    const previous = this.data[id] || {};
+    const rank = { observed: 1, explored: 2 };
+    const upgraded = (rank[level] || 1) > (rank[previous.level] || 0);
+
+    this.data[id] = {
+      id,
+      level: upgraded ? level : previous.level || level,
+      firstSeen: previous.firstSeen || Date.now(),
+      lastSeen: Date.now()
+    };
+    this.#save();
+    this.render();
+  }
+
+  count() {
+    return Object.keys(this.data).length;
+  }
+
+  toggle(force) {
+    const open = force ?? this.panel.classList.contains('hidden');
+    this.panel.classList.toggle('hidden', !open);
+    if (open) this.render();
+  }
+
+  reset() {
+    this.data = {};
+    this.#save();
+    this.render();
+  }
+
+  render() {
+    const observed = this.count();
+    const explored = Object.values(this.data).filter(entry => entry.level === 'explored').length;
+    this.badge.textContent = observed;
+    this.badge.classList.toggle('hidden', observed === 0);
+    this.summary.textContent = `${observed} de ${this.pois.length} destinos registrados · ${explored} explorados`;
+
+    this.progress.innerHTML = '';
+    for (const category of this.categories) {
+      const items = this.pois.filter(poi => poi.category === category.id);
+      const found = items.filter(poi => this.data[poi.id]).length;
+      if (!items.length) continue;
+
+      const row = document.createElement('div');
+      row.className = 'discovery-row';
+      row.innerHTML = `<div><span style="--category:${category.color}">${category.name}</span><b>${found}/${items.length}</b></div>`;
+      const track = document.createElement('i');
+      const fill = document.createElement('em');
+      fill.style.width = `${(found / items.length) * 100}%`;
+      fill.style.background = category.color;
+      track.appendChild(fill);
+      row.appendChild(track);
+      this.progress.appendChild(row);
+    }
+
+    this.recent.innerHTML = '';
+    const recent = Object.values(this.data)
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+      .slice(0, 7);
+
+    if (!recent.length) {
+      this.recent.innerHTML = '<p class="discovery-empty">Aún no hay observaciones registradas.</p>';
+      return;
+    }
+
+    for (const entry of recent) {
+      const poi = this.byId.get(entry.id);
+      if (!poi) continue;
+      const item = document.createElement('div');
+      item.className = 'discovery-item';
+      item.innerHTML = `<i style="--tone:${poi.color}"></i><span>${poi.name}</span><b>${entry.level === 'explored' ? 'EXPLORADO' : 'OBSERVADO'}</b>`;
+      this.recent.appendChild(item);
+    }
+  }
+}
+
 /* ========== ui.js ========== */
 const $ = id => document.getElementById(id);
 
@@ -3154,6 +3286,7 @@ class UI {
       panelTitle: $('panel-title'), panelSub: $('panel-sub'), panelBody: $('panel-body'),
       panelAction: $('panel-action'), panelClose: $('panel-close'),
       back: $('btn-back'), fade: $('fade'),
+      localGroup: $('btn-local-group'),
       navigator: $('navigator'), navToggle: $('nav-toggle'), navCurrent: $('nav-current'),
       navInput: $('nav-input'), navList: $('nav-list'), navChips: $('nav-chips'),
       navCount: $('nav-count'),
@@ -3420,6 +3553,7 @@ class UI {
 
   setMode(mode) {
     this.el.back.classList.toggle('hidden', mode === 'galaxy');
+    this.el.localGroup.classList.toggle('hidden', mode !== 'galaxy');
     this.el.orbitsBtn.classList.toggle('hidden', mode !== 'solar');
   }
 }
@@ -3460,6 +3594,7 @@ let solar = null;
 let blackhole = null;
 let orion = null;
 let localGroup = null;
+let discoveries = null;
 let scene = null;
 let composer, bloom, renderPass;
 
@@ -3503,6 +3638,8 @@ function boot() {
   localGroup = new LocalGroup();
   localGroupScene.add(localGroup.group);
 
+  discoveries = new Discoveries(POIS, CATEGORIES);
+
   scene = galaxyScene;
 
   renderPass = new RenderPass(scene, camera);
@@ -3518,7 +3655,7 @@ function boot() {
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, discoveries, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -3544,7 +3681,6 @@ function setupGalaxyMode(initial = false) {
   }
 
   ui.setMode('galaxy');
-  document.getElementById('btn-local-group').classList.remove('hidden');
   document.getElementById('btn-back').lastChild.textContent = ' Volver a la galaxia';
   ui.setContext('Vía Láctea · Galaxia espiral barrada SBbc');
   ui.setScale('100 000 ly');
@@ -3596,6 +3732,7 @@ function poiMarker(poi) {
 
 function selectPOI(poi) {
   state.selected = poi;
+  discoveries.record(poi.id, 'observed');
   applyIsolation();
   ui.setTarget(poi.name);
   ui.setNavCurrent(poi.id, poi.name);
@@ -3778,7 +3915,6 @@ function setupLocalGroupMode() {
   controls.enablePan = true;
 
   ui.setMode('localgroup');
-  document.getElementById('btn-local-group').classList.add('hidden');
   document.getElementById('btn-back').lastChild.textContent = ' Explorar la Vía Láctea';
   ui.setContext('Grupo Local · ~ 60 galaxias ligadas gravitacionalmente');
   ui.setScale('~ 5 millones de años luz');
@@ -3870,6 +4006,7 @@ function enterDestination(poi) {
 
   state.transitioning = true;
   state.destination = poi;
+  discoveries.record(poi.id, 'explored');
   ui.hidePanel();
 
   flyTo(poiWorldPosition(poi), 2.2, 1.5, null, () => {
