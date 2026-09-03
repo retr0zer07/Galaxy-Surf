@@ -196,32 +196,129 @@ html, body {
 #btn-back svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
 
 /* ---------- Dock ---------- */
-#dock {
-  position: fixed; left: 26px; bottom: 26px; z-index: 20;
-  max-width: 44vw;
-}
-.dock-label {
-  font-size: 9px; letter-spacing: 2.5px; color: var(--cyan-dim);
-  text-transform: uppercase; margin-bottom: 10px; font-family: var(--mono);
-}
-#dock-items { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.dock-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 9px 14px;
-  background: rgba(8,14,26,.7); backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,.1); border-radius: 3px;
-  font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase;
-  font-family: var(--mono); color: var(--muted);
+/* ---------- Navegador de destinos ---------- */
+#nav-toggle {
+  position: fixed; left: 26px; bottom: 26px; z-index: 26;
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px;
+  background: var(--panel); backdrop-filter: blur(14px);
+  border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text); font-family: var(--mono);
+  font-size: 10.5px; letter-spacing: 1.8px; text-transform: uppercase;
   cursor: pointer; transition: .22s;
+  min-width: 232px;
 }
-.dock-item i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.dock-item:hover { color: #fff; border-color: var(--border); background: rgba(95,230,255,.1); }
-.dock-item.unlocked { color: var(--gold); border-color: rgba(255,207,122,.35); }
-.dock-item.unlocked:hover { background: rgba(255,207,122,.14); color: #fff; }
-.dock-item.current { color: #03040a; background: var(--cyan); border-color: var(--cyan); }
-.dock-item.locked { opacity: .5; cursor: not-allowed; }
-.dock-item.locked:hover { background: rgba(8,14,26,.7); color: var(--muted); }
+#nav-toggle:hover { background: rgba(95, 230, 255, .12); border-color: var(--cyan); }
+#nav-toggle .nav-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--cyan); box-shadow: 0 0 10px var(--cyan);
+  flex: 0 0 auto;
+}
+#nav-current { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+kbd {
+  font-family: var(--mono); font-size: 9px;
+  padding: 2px 5px; border-radius: 3px;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(255, 255, 255, .12);
+  color: var(--muted);
+}
+
+#navigator {
+  position: fixed; left: 26px; bottom: 74px; z-index: 27;
+  width: 352px;
+  background: var(--panel); backdrop-filter: blur(20px);
+  border: 1px solid var(--border); border-radius: 4px;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, .68);
+  overflow: hidden;
+  transform-origin: bottom left;
+  transition: opacity .2s, transform .2s;
+}
+#navigator.closed {
+  opacity: 0; transform: translateY(10px) scale(.97); pointer-events: none;
+}
+
+.nav-search {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+.nav-search svg {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  fill: none; stroke: var(--cyan-dim); stroke-width: 2;
+}
+#nav-input {
+  flex: 1; background: none; border: 0; outline: none;
+  color: var(--text); font-family: var(--font); font-size: 13.5px;
+}
+#nav-input::placeholder { color: var(--muted); }
+#nav-count { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+.nav-chips {
+  display: flex; gap: 5px; padding: 11px 15px 0;
+  flex-wrap: wrap;
+}
+.nav-chip {
+  padding: 5px 10px;
+  background: none; border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 20px; cursor: pointer; transition: .18s;
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--muted);
+}
+.nav-chip:hover { color: #fff; border-color: rgba(255, 255, 255, .25); }
+.nav-chip.on {
+  color: var(--chip); border-color: var(--chip);
+  background: color-mix(in srgb, var(--chip) 15%, transparent);
+}
+
+.nav-list {
+  max-height: 330px; overflow-y: auto;
+  padding: 9px 8px 10px;
+}
+.nav-list::-webkit-scrollbar { width: 3px; }
+.nav-list::-webkit-scrollbar-thumb { background: rgba(95, 230, 255, .3); }
+
+.nav-group {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--cyan-dim);
+  padding: 11px 9px 6px;
+}
+
+.nav-item {
+  display: flex; align-items: center; gap: 11px;
+  width: 100%; padding: 9px 10px;
+  background: none; border: 0; border-radius: 3px;
+  cursor: pointer; text-align: left; transition: background .15s;
+}
+.nav-item:hover, .nav-item.active { background: rgba(95, 230, 255, .12); }
+.nav-item i {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--tone); box-shadow: 0 0 8px var(--tone);
+  flex: 0 0 auto;
+}
+.nav-item .nav-name { flex: 1; font-size: 12.5px; color: var(--text); }
+.nav-item .nav-meta {
+  font-family: var(--mono); font-size: 9.5px; color: var(--muted);
+  white-space: nowrap;
+}
+.nav-item .nav-go {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 1.4px;
+  color: var(--gold); border: 1px solid rgba(255, 207, 122, .4);
+  padding: 2px 6px; border-radius: 3px;
+}
+.nav-item.current .nav-name { color: var(--cyan); }
+.nav-empty {
+  padding: 26px 12px; text-align: center;
+  font-size: 12px; color: var(--muted);
+}
+
+.nav-foot {
+  display: flex; gap: 16px; padding: 10px 15px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  font-family: var(--mono); font-size: 9px;
+  color: var(--muted); letter-spacing: 1px;
+}
+.nav-foot span { display: flex; align-items: center; gap: 5px; }
 
 /* ---------- Herramientas de vista ---------- */
 #view-tools {
@@ -293,7 +390,10 @@ html, body {
 @media (max-width: 820px) {
   .hud-stats { display: none; }
   #panel { left: 14px; right: 14px; width: auto; top: auto; bottom: 14px; max-height: 52vh; }
-  #dock { max-width: calc(100vw - 52px); bottom: 14px; }
+  #nav-toggle { left: 14px; bottom: 14px; min-width: 0; }
+  #navigator { left: 14px; right: 14px; width: auto; bottom: 62px; }
+  .nav-list { max-height: 44vh; }
+  .nav-foot { display: none; }
   #view-tools { bottom: auto; top: 84px; right: 14px; }
   .speed { display: none; }
   #hint { display: none; }

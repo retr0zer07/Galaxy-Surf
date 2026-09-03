@@ -47,107 +47,324 @@ export const SUN_POSITION = {
 
 /* ==================================================================
  *  Puntos de interés galácticos
- *  Solo "solar" es explorable por ahora.
+ *
+ *  Cada destino se sitúa con sus coordenadas galácticas reales:
+ *  l = longitud (0° hacia el centro), b = latitud, ly = distancia al Sol.
  * ================================================================== */
-function onArm(r, arm, offset = 0, y = 0) {
-  const a = armAngle(r, arm) + offset;
-  return { x: Math.cos(a) * r, y, z: Math.sin(a) * r };
+
+/** Convierte coordenadas galácticas heliocéntricas a la escena (1 u = 1000 ly) */
+function fromSun(ly, l, b) {
+  const d = ly / 1000;
+  const lr = (l * Math.PI) / 180;
+  const br = (b * Math.PI) / 180;
+
+  // Base local: eX apunta al centro galáctico, eR a l = 90°
+  const n = Math.hypot(SUN_POSITION.x, SUN_POSITION.z);
+  const eX = -SUN_POSITION.x / n, eZ = -SUN_POSITION.z / n;
+  const rX = -eZ, rZ = eX;
+
+  const cb = Math.cos(br);
+  const along = d * cb * Math.cos(lr);
+  const side = d * cb * Math.sin(lr);
+
+  return {
+    x: SUN_POSITION.x + along * eX + side * rX,
+    y: SUN_POSITION.y + d * Math.sin(br),
+    z: SUN_POSITION.z + along * eZ + side * rZ
+  };
 }
 
+export const CATEGORIES = [
+  { id: 'all', name: 'Todos', color: '#5fe6ff' },
+  { id: 'sistema', name: 'Sistemas', color: '#ffcf7a' },
+  { id: 'nebulosa', name: 'Nebulosas', color: '#ff9bd0' },
+  { id: 'cumulo', name: 'Cúmulos', color: '#9fd8ff' },
+  { id: 'remanente', name: 'Remanentes', color: '#8affc8' },
+  { id: 'exotico', name: 'Exóticos', color: '#ff7a9c' },
+  { id: 'estructura', name: 'Estructuras', color: '#c9a6ff' }
+];
+
+const CATEGORY_COLOR = Object.fromEntries(CATEGORIES.map(c => [c.id, c.color]));
+
 export const POIS = [
+  /* ---------------- Explorables ---------------- */
   {
-    id: 'solar',
-    name: 'Sistema Solar',
-    tag: 'SISTEMA PLANETARIO',
+    id: 'solar', name: 'Sistema Solar', tag: 'SISTEMA PLANETARIO',
+    category: 'sistema', ly: 0, l: 0, b: 0,
+    position: SUN_POSITION, color: '#ffcf7a', explorable: true,
     sub: 'Brazo de Orión · 26 000 ly del centro galáctico',
-    position: SUN_POSITION,
-    color: '#ffcf7a',
-    explorable: true,
     desc: 'Nuestro hogar: una enana amarilla de tipo G2V acompañada de ocho planetas, cinco planetas enanos reconocidos y cientos de miles de cuerpos menores. Orbita el centro galáctico a 230 km/s y completa una vuelta —un año galáctico— cada 225 millones de años.',
     facts: [
-      ['Edad', '4 568 Ma'],
-      ['Estrella', 'G2V · Sol'],
-      ['Planetas', '8'],
-      ['Diámetro', '~ 0.003 ly'],
-      ['Velocidad orbital', '230 km/s'],
-      ['Año galáctico', '225 Ma']
+      ['Edad', '4 568 Ma'], ['Estrella', 'G2V · Sol'], ['Planetas', '8'],
+      ['Diámetro', '~ 0.003 ly'], ['Velocidad orbital', '230 km/s'], ['Año galáctico', '225 Ma']
     ]
   },
   {
-    id: 'sgra',
-    name: 'Sagitario A*',
-    tag: 'AGUJERO NEGRO SUPERMASIVO',
-    sub: 'Centro galáctico · 26 000 ly del Sol',
-    position: { x: 0, y: 0, z: 0 },
-    color: '#ff7a9c',
-    explorable: true,
+    id: 'sgra', name: 'Sagitario A*', tag: 'AGUJERO NEGRO SUPERMASIVO',
+    category: 'exotico', ly: 26673, l: 0, b: 0,
+    position: { x: 0, y: 0, z: 0 }, color: '#ff7a9c', explorable: true,
     actionLabel: 'Aproximarse al horizonte',
+    sub: 'Centro galáctico · 26 673 ly del Sol',
     desc: 'El agujero negro supermasivo que ancla la rotación de toda la galaxia. Concentra 4,3 millones de masas solares en una región menor que la órbita de Mercurio. Su gravedad curva las trayectorias de la luz: lo que se ve alrededor del disco no es el disco, sino su propia imagen desviada por el espacio-tiempo.',
     facts: [
-      ['Masa', '4.297×10⁶ M☉'],
-      ['Horizonte', '12.7 M km'],
-      ['Sombra', '~ 52 μas'],
-      ['Distancia', '26 673 ly'],
-      ['Descubierto', '1974'],
-      ['Imagen EHT', '2022']
+      ['Masa', '4.297×10⁶ M☉'], ['Horizonte', '12.7 M km'], ['Sombra', '~ 52 μas'],
+      ['Distancia', '26 673 ly'], ['Descubierto', '1974'], ['Imagen EHT', '2022']
     ]
   },
+
+  /* ---------------- Sistemas estelares ---------------- */
   {
-    id: 'orion',
-    name: 'Nebulosa de Orión',
-    tag: 'REGIÓN HII',
-    sub: 'Brazo de Orión · 1 344 ly del Sol',
-    position: onArm(25.0, 2, 0.30, 0.2),
-    color: '#ff9bd0',
-    explorable: false,
-    desc: 'Vivero estelar donde nacen más de 700 estrellas jóvenes envueltas en discos protoplanetarios.',
-    facts: [['Diámetro', '24 ly'], ['Edad', '~ 2 Ma'], ['Magnitud', '+4.0']]
+    id: 'alphacen', name: 'Alfa Centauri', tag: 'SISTEMA TRIPLE',
+    category: 'sistema', ly: 4.37, l: 315.73, b: -0.68,
+    desc: 'El sistema estelar más cercano al Sol. Dos estrellas similares al Sol orbitan entre sí cada 80 años, acompañadas a lo lejos por Próxima Centauri, una enana roja con un planeta rocoso en zona habitable.',
+    facts: [['Estrellas', '3'], ['Tipo', 'G2V + K1V + M5.5Ve'], ['Exoplanetas', '2 confirmados'], ['Periodo A-B', '79.9 años'], ['Próxima b', '1.07 M⊕']]
   },
   {
-    id: 'pleiades',
-    name: 'Las Pléyades',
-    tag: 'CÚMULO ABIERTO',
-    sub: 'Brazo de Orión · 444 ly del Sol',
-    position: onArm(26.8, 2, 0.38, 0.5),
-    color: '#9fd8ff',
-    explorable: false,
-    desc: 'Cúmulo de estrellas azules calientes formadas hace apenas 100 millones de años, todavía envueltas en nebulosidad de reflexión.',
-    facts: [['Estrellas', '~ 1 000'], ['Edad', '100 Ma'], ['Diámetro', '43 ly']]
+    id: 'sirius', name: 'Sirio', tag: 'BINARIA CON ENANA BLANCA',
+    category: 'sistema', ly: 8.6, l: 227.23, b: -8.89,
+    desc: 'La estrella más brillante del cielo nocturno. Sirio A es el doble de masiva que el Sol; su compañera, Sirio B, es una enana blanca del tamaño de la Tierra con la masa del Sol: una cucharada de su materia pesaría toneladas.',
+    facts: [['Magnitud', '−1.46'], ['Tipo', 'A1V + DA2'], ['Periodo', '50.1 años'], ['Sirio B', '0.0084 R☉'], ['Edad', '242 Ma']]
   },
   {
-    id: 'crab',
-    name: 'Nebulosa del Cangrejo',
-    tag: 'RESTO DE SUPERNOVA',
-    sub: 'Brazo de Perseo · 6 500 ly del Sol',
-    position: onArm(31.5, 0, -0.15, -0.4),
-    color: '#8affc8',
-    explorable: false,
-    desc: 'Los restos en expansión de la supernova observada en el año 1054, con un púlsar girando 30 veces por segundo en su núcleo.',
-    facts: [['Supernova', 'año 1054'], ['Expansión', '1 500 km/s'], ['Púlsar', '30 Hz']]
+    id: 'trappist', name: 'TRAPPIST-1', tag: 'SISTEMA DE 7 PLANETAS',
+    category: 'sistema', ly: 40.7, l: 69.4, b: -47.1,
+    desc: 'Una enana roja ultrafría con siete planetas del tamaño de la Tierra, tres de ellos en la zona habitable. Todo el sistema cabría dentro de la órbita de Mercurio, y sus planetas están en resonancia orbital.',
+    facts: [['Planetas', '7'], ['Tipo', 'M8V'], ['Radio estelar', '0.12 R☉'], ['Zona habitable', '3 planetas'], ['Descubierto', '2016']]
   },
   {
-    id: 'eagle',
-    name: 'Nebulosa del Águila',
-    tag: 'REGIÓN HII',
-    sub: 'Brazo de Sagitario · 7 000 ly del Sol',
-    position: onArm(20.5, 3, 0.12, 0.3),
-    color: '#c9a6ff',
-    explorable: false,
-    desc: 'Hogar de los Pilares de la Creación: columnas de gas y polvo de varios años luz esculpidas por la radiación de estrellas masivas.',
-    facts: [['Pilares', '4-5 ly'], ['Edad', '5.5 Ma'], ['Distancia', '7 000 ly']]
+    id: 'betelgeuse', name: 'Betelgeuse', tag: 'SUPERGIGANTE ROJA',
+    category: 'sistema', ly: 548, l: 199.79, b: -8.96,
+    desc: 'Si ocupara el lugar del Sol, su superficie engulliría la órbita de Júpiter. Es una supergigante en fase terminal: explotará como supernova en los próximos 100 000 años y brillará como la Luna llena.',
+    facts: [['Radio', '~ 764 R☉'], ['Masa', '16.5 M☉'], ['Tipo', 'M1-2 Ia-ab'], ['Temperatura', '3 600 K'], ['Supernova', '< 100 000 años']]
+  },
+
+  /* ---------------- Nebulosas ---------------- */
+  {
+    id: 'orion', name: 'Nebulosa de Orión', tag: 'REGIÓN HII',
+    category: 'nebulosa', ly: 1344, l: 209.01, b: -19.38,
+    desc: 'El vivero estelar más cercano y estudiado. Más de 700 estrellas jóvenes se forman dentro, muchas rodeadas de discos protoplanetarios donde ahora mismo nacen sistemas solares.',
+    facts: [['Diámetro', '24 ly'], ['Edad', '~ 2 Ma'], ['Magnitud', '+4.0'], ['Masa', '2 000 M☉'], ['Trapecio', '4 estrellas O/B']]
   },
   {
-    id: 'omega',
-    name: 'Omega Centauri',
-    tag: 'CÚMULO GLOBULAR',
-    sub: 'Halo galáctico · 17 000 ly del Sol',
-    position: { x: 16, y: -14, z: -22 },
-    color: '#ffe6a8',
-    explorable: false,
-    desc: 'El cúmulo globular más brillante de la galaxia; posiblemente el núcleo superviviente de una galaxia enana devorada por la Vía Láctea.',
-    facts: [['Estrellas', '10 millones'], ['Edad', '11 500 Ma'], ['Diámetro', '150 ly']]
+    id: 'horsehead', name: 'Cabeza de Caballo', tag: 'NEBULOSA OSCURA',
+    category: 'nebulosa', ly: 1375, l: 206.86, b: -16.53,
+    desc: 'Una columna de polvo frío recortada contra el resplandor rojo del hidrógeno ionizado. No emite luz: se ve porque bloquea la que hay detrás. Se disgregará en unos 5 millones de años.',
+    facts: [['Tamaño', '3.5 ly'], ['Catálogo', 'Barnard 33'], ['Descubierta', '1888'], ['Constelación', 'Orión']]
+  },
+  {
+    id: 'eagle', name: 'Nebulosa del Águila', tag: 'REGIÓN HII',
+    category: 'nebulosa', ly: 7000, l: 16.95, b: 0.79,
+    desc: 'Hogar de los Pilares de la Creación: columnas de gas y polvo de varios años luz esculpidas por la radiación de estrellas masivas cercanas, con nuevas estrellas condensándose en sus puntas.',
+    facts: [['Pilares', '4-5 ly'], ['Edad', '5.5 Ma'], ['Catálogo', 'M16'], ['Estrellas', '~ 8 100']]
+  },
+  {
+    id: 'lagoon', name: 'Nebulosa de la Laguna', tag: 'REGIÓN HII',
+    category: 'nebulosa', ly: 4100, l: 5.97, b: -1.17,
+    desc: 'Una de las dos únicas nebulosas de formación estelar visibles a simple vista desde latitudes medias. Contiene glóbulos de Bok, capullos oscuros de gas en colapso gravitatorio.',
+    facts: [['Tamaño', '110 × 50 ly'], ['Catálogo', 'M8'], ['Magnitud', '+6.0'], ['Descubierta', '1654']]
+  },
+  {
+    id: 'carina', name: 'Nebulosa de Carina', tag: 'REGIÓN HII GIGANTE',
+    category: 'nebulosa', ly: 8500, l: 287.6, b: -0.63,
+    desc: 'Cuatro veces mayor que la de Orión y mucho más violenta. Alberga a Eta Carinae, una hipergigante de 100 masas solares que en 1843 protagonizó una falsa supernova y hoy sigue al borde del colapso.',
+    facts: [['Tamaño', '~ 460 ly'], ['Eta Carinae', '~ 100 M☉'], ['Luminosidad', '5×10⁶ L☉'], ['Catálogo', 'NGC 3372']]
+  },
+  {
+    id: 'ring', name: 'Nebulosa del Anillo', tag: 'NEBULOSA PLANETARIA',
+    category: 'nebulosa', ly: 2300, l: 63.62, b: 13.0,
+    desc: 'El cadáver de una estrella parecida al Sol: sus capas exteriores expulsadas forman un anillo en expansión iluminado por la enana blanca central. Así terminará el Sol dentro de 5 000 millones de años.',
+    facts: [['Diámetro', '2.6 ly'], ['Catálogo', 'M57'], ['Expansión', '20-30 km/s'], ['Edad', '~ 7 000 años']]
+  },
+  {
+    id: 'helix', name: 'Nebulosa Hélice', tag: 'NEBULOSA PLANETARIA',
+    category: 'nebulosa', ly: 655, l: 36.16, b: -57.12,
+    desc: 'Apodada "el Ojo de Dios". La nebulosa planetaria más cercana, vista casi de frente: miles de nudos cometarios del tamaño del Sistema Solar apuntan hacia la enana blanca central.',
+    facts: [['Diámetro', '2.9 ly'], ['Catálogo', 'NGC 7293'], ['Nudos', '~ 40 000'], ['Edad', '10 600 años']]
+  },
+
+  /* ---------------- Cúmulos ---------------- */
+  {
+    id: 'pleiades', name: 'Las Pléyades', tag: 'CÚMULO ABIERTO',
+    category: 'cumulo', ly: 444, l: 166.57, b: -23.52,
+    desc: 'Estrellas azules calientes formadas hace apenas 100 millones de años, atravesando ahora una nube de polvo que refleja su luz. Visibles a simple vista desde la prehistoria y presentes en casi todas las culturas.',
+    facts: [['Estrellas', '~ 1 000'], ['Edad', '100 Ma'], ['Diámetro', '43 ly'], ['Catálogo', 'M45'], ['Magnitud', '+1.6']]
+  },
+  {
+    id: 'hyades', name: 'Las Híades', tag: 'CÚMULO ABIERTO',
+    category: 'cumulo', ly: 153, l: 180.0, b: -22.3,
+    desc: 'El cúmulo abierto más cercano al Sol. Sus estrellas comparten un mismo movimiento por el espacio, prueba de que nacieron juntas de la misma nube hace 625 millones de años.',
+    facts: [['Estrellas', '~ 300'], ['Edad', '625 Ma'], ['Diámetro', '~ 60 ly'], ['Constelación', 'Tauro']]
+  },
+  {
+    id: 'beehive', name: 'El Pesebre', tag: 'CÚMULO ABIERTO',
+    category: 'cumulo', ly: 577, l: 205.92, b: 32.48,
+    desc: 'Conocido desde la Antigüedad como una nube difusa, Galileo fue el primero en resolverlo en estrellas con su telescopio en 1609. Alberga varios exoplanetas confirmados.',
+    facts: [['Estrellas', '~ 1 000'], ['Edad', '600 Ma'], ['Catálogo', 'M44'], ['Exoplanetas', '2 confirmados']]
+  },
+  {
+    id: 'perseus2', name: 'Cúmulo Doble', tag: 'CÚMULO ABIERTO DOBLE',
+    category: 'cumulo', ly: 7500, l: 135.0, b: -3.8,
+    desc: 'Dos cúmulos jóvenes y masivos separados por apenas cientos de años luz, ambos en el Brazo de Perseo. Contienen decenas de supergigantes rojas y azules destinadas a explotar como supernovas.',
+    facts: [['Catálogo', 'NGC 869 / 884'], ['Edad', '12.8 Ma'], ['Estrellas', '> 600'], ['Supergigantes', '~ 5']]
+  },
+  {
+    id: 'm13', name: 'Cúmulo de Hércules', tag: 'CÚMULO GLOBULAR',
+    category: 'cumulo', ly: 22200, l: 59.01, b: 40.91,
+    desc: 'Una esfera de varios cientos de miles de estrellas antiguas orbitando el halo galáctico. En 1974 se le envió el mensaje de Arecibo, la primera transmisión deliberada de la humanidad hacia otro sistema.',
+    facts: [['Estrellas', '~ 300 000'], ['Edad', '11 650 Ma'], ['Diámetro', '145 ly'], ['Catálogo', 'M13']]
+  },
+  {
+    id: 'omega', name: 'Omega Centauri', tag: 'CÚMULO GLOBULAR',
+    category: 'cumulo', ly: 15800, l: 309.1, b: 14.97,
+    desc: 'El cúmulo globular más brillante y masivo de la galaxia. Sus estrellas tienen edades y composiciones distintas, lo que sugiere que es el núcleo superviviente de una galaxia enana devorada por la Vía Láctea.',
+    facts: [['Estrellas', '10 millones'], ['Edad', '11 500 Ma'], ['Diámetro', '150 ly'], ['Masa', '4×10⁶ M☉']]
+  },
+
+  /* ---------------- Remanentes ---------------- */
+  {
+    id: 'crab', name: 'Nebulosa del Cangrejo', tag: 'RESTO DE SUPERNOVA',
+    category: 'remanente', ly: 6500, l: 184.56, b: -5.78,
+    desc: 'Los restos en expansión de la supernova que astrónomos chinos vieron brillar de día durante 23 jornadas en el año 1054. En su centro, un púlsar del tamaño de una ciudad gira 30 veces por segundo.',
+    facts: [['Supernova', 'año 1054'], ['Expansión', '1 500 km/s'], ['Púlsar', '30.2 Hz'], ['Diámetro', '11 ly'], ['Catálogo', 'M1']]
+  },
+  {
+    id: 'vela', name: 'Púlsar de Vela', tag: 'RESTO DE SUPERNOVA',
+    category: 'remanente', ly: 815, l: 263.55, b: -2.79,
+    desc: 'El resto de supernova más cercano y brillante en rayos gamma. Su púlsar dispara un chorro de partículas a la mitad de la velocidad de la luz y sufre "glitches": reajustes bruscos de su rotación.',
+    facts: [['Supernova', 'hace 11 000 años'], ['Púlsar', '11.2 Hz'], ['Diámetro', '~ 100 ly'], ['Chorro', '0.5 c']]
+  },
+  {
+    id: 'casa', name: 'Casiopea A', tag: 'RESTO DE SUPERNOVA',
+    category: 'remanente', ly: 11000, l: 111.73, b: -2.13,
+    desc: 'La fuente de radio más brillante del cielo fuera del Sistema Solar. Su luz llegó a la Tierra hacia 1690 casi sin ser vista, oculta tras el polvo interestelar. Sigue expandiéndose a 6 000 km/s.',
+    facts: [['Supernova', '~ 1690'], ['Expansión', '6 000 km/s'], ['Diámetro', '10 ly'], ['Remanente', 'estrella de neutrones']]
+  },
+
+  /* ---------------- Exóticos ---------------- */
+  {
+    id: 'cygx1', name: 'Cygnus X-1', tag: 'AGUJERO NEGRO ESTELAR',
+    category: 'exotico', ly: 7200, l: 71.33, b: 3.07,
+    desc: 'El primer objeto reconocido como agujero negro. Devora material de una supergigante azul compañera, formando un disco de acreción a millones de grados que lo delata en rayos X. Objeto de una famosa apuesta entre Hawking y Thorne.',
+    facts: [['Masa', '21.2 M☉'], ['Compañera', 'O9.7 Iab'], ['Periodo', '5.6 días'], ['Descubierto', '1964'], ['Rotación', '> 95 % del límite']]
+  },
+  {
+    id: 'magnetar', name: 'SGR 1806-20', tag: 'MAGNETAR',
+    category: 'exotico', ly: 42000, l: 10.0, b: -0.24,
+    desc: 'La estrella de neutrones con el campo magnético más intenso conocido: mil billones de veces el terrestre. En 2004 emitió un destello que en 0,2 segundos liberó más energía que el Sol en 150 000 años y alteró la ionosfera terrestre.',
+    facts: [['Campo magnético', '2×10¹¹ T'], ['Rotación', '7.5 s'], ['Destello', '27 dic 2004'], ['Diámetro', '~ 20 km']]
+  },
+
+  /* ---------------- Estructuras ---------------- */
+  {
+    id: 'orionarm', name: 'Brazo de Orión', tag: 'ESPOLÓN GALÁCTICO',
+    category: 'estructura', ly: 1500, l: 80.0, b: 0,
+    desc: 'El espolón menor donde vive el Sol, encajado entre los brazos de Perseo y Sagitario. Mide unos 3 500 años luz de ancho y 20 000 de largo: una estructura secundaria que durante décadas se creyó insignificante.',
+    facts: [['Anchura', '3 500 ly'], ['Longitud', '20 000 ly'], ['Tipo', 'espolón'], ['Contiene', 'el Sistema Solar']]
+  },
+  {
+    id: 'localbubble', name: 'Burbuja Local', tag: 'CAVIDAD INTERESTELAR',
+    category: 'estructura', ly: 300, l: 250.0, b: 20.0,
+    desc: 'Una cavidad de 1 000 años luz de gas enrarecido y caliente en la que el Sistema Solar lleva viajando millones de años. La excavaron entre 10 y 20 supernovas; en su superficie se están formando ahora nuevas estrellas.',
+    facts: [['Diámetro', '~ 1 000 ly'], ['Densidad', '0.05 át/cm³'], ['Temperatura', '10⁶ K'], ['Origen', '10-20 supernovas']]
+  },
+  {
+    id: 'taurus', name: 'Nube de Tauro', tag: 'NUBE MOLECULAR',
+    category: 'estructura', ly: 430, l: 172.5, b: -15.5,
+    desc: 'La región de formación estelar masiva más cercana. Un laboratorio natural donde se estudian las primeras fases de las estrellas de tipo solar: filamentos oscuros y fríos donde el gas colapsa en protoestrellas.',
+    facts: [['Masa', '~ 30 000 M☉'], ['Temperatura', '10 K'], ['Protoestrellas', '> 400'], ['Extensión', '~ 100 ly']]
+  },
+  {
+    id: 'fermi', name: 'Burbujas de Fermi', tag: 'ESTRUCTURA GAMMA',
+    category: 'estructura', position: { x: 0, y: 12, z: 0 }, ly: 26673, l: 0, b: 90,
+    desc: 'Dos lóbulos gigantes de gas caliente que emergen del centro galáctico y se extienden 25 000 años luz por encima y por debajo del disco. Son la cicatriz de una erupción de Sagitario A* hace unos 6 millones de años.',
+    facts: [['Altura', '25 000 ly'], ['Energía', '10⁵⁵ erg'], ['Edad', '~ 6 Ma'], ['Descubiertas', '2010']]
+  },
+  {
+    id: 'lmc', name: 'Gran Nube de Magallanes', tag: 'GALAXIA SATÉLITE',
+    category: 'estructura', ly: 163000, l: 280.47, b: -32.89,
+    desc: 'Una galaxia enana irregular en órbita alrededor de la Vía Láctea, deformada por su marea gravitatoria. Alberga la Nebulosa de la Tarántula, la región de formación estelar más activa del Grupo Local.',
+    facts: [['Diámetro', '32 000 ly'], ['Masa', '10¹⁰ M☉'], ['Estrellas', '~ 30 000 M'], ['SN 1987A', 'observada en 1987']]
   }
 ];
+
+/* Completa posición, color, forma y subtítulo a partir de las coordenadas galácticas */
+const DEFAULT_SIZE = {
+  sistema: 0.30, nebulosa: 0.95, cumulo: 0.75,
+  remanente: 0.85, exotico: 0.45, estructura: 1.7
+};
+
+/* Representación visual de cada destino en la vista galáctica */
+const SHAPES = {
+  alphacen: { shape: 'multi', size: 0.26, stars: ['#fff4e0', '#ffd9a0', '#ff8a6a'] },
+  sirius: { shape: 'multi', size: 0.24, stars: ['#dbe6ff', '#ffffff'] },
+  trappist: { shape: 'multi', size: 0.18, stars: ['#ff7a52'] },
+  betelgeuse: { shape: 'supergiant', size: 0.42, stars: ['#ff6a3a'] },
+
+  orion: { shape: 'nebula', size: 1.0, tint: ['#ff6fae', '#ff9ad4', '#6fa8ff'] },
+  horsehead: { shape: 'dark', size: 0.7, tint: ['#c8434f', '#7a2230'] },
+  eagle: { shape: 'nebula', size: 1.1, tint: ['#b98cff', '#6fd0ff', '#ffa8e0'] },
+  lagoon: { shape: 'nebula', size: 1.0, tint: ['#ff7a7a', '#ffb0c8', '#8ab6ff'] },
+  carina: { shape: 'nebula', size: 1.6, tint: ['#ff9a5a', '#ff6f9a', '#8ac6ff'] },
+  ring: { shape: 'planetary', size: 0.55, tint: ['#7affd0', '#ff8ab0'] },
+  helix: { shape: 'planetary', size: 0.6, tint: ['#6fd8ff', '#ff9a7a'] },
+
+  pleiades: { shape: 'open', size: 0.8, tint: ['#a8ccff'], veil: '#5f9dff' },
+  hyades: { shape: 'open', size: 0.85, tint: ['#ffd9a0'] },
+  beehive: { shape: 'open', size: 0.75, tint: ['#e8f0ff'] },
+  perseus2: { shape: 'double', size: 0.9, tint: ['#bcd8ff', '#ffd0a0'] },
+  m13: { shape: 'globular', size: 1.05, tint: ['#ffd9a0'] },
+  omega: { shape: 'globular', size: 1.2, tint: ['#ffe6b8'] },
+
+  crab: { shape: 'snr', size: 0.9, tint: ['#8affc8', '#6fb0ff'], pulsar: true },
+  vela: { shape: 'snr', size: 1.0, tint: ['#7affd8', '#a8f0ff'], pulsar: true },
+  casa: { shape: 'snr', size: 0.85, tint: ['#ffb06f', '#8affc8'] },
+
+  cygx1: { shape: 'blackhole', size: 0.5, tint: ['#ff9a4a', '#dbe6ff'] },
+  magnetar: { shape: 'magnetar', size: 0.35, tint: ['#ff7a9c'] },
+
+  orionarm: { shape: 'arm', size: 3.2, tint: ['#9fc9ff'] },
+  localbubble: { shape: 'bubble', size: 2.2, tint: ['#6fd0ff'] },
+  taurus: { shape: 'cloud', size: 1.5, tint: ['#6a4a3a', '#3a2a26'] },
+  fermi: { shape: 'lobes', size: 7.0, tint: ['#c9a6ff', '#8f6fff'] },
+  lmc: { shape: 'galaxy', size: 4.5, tint: ['#cfe0ff', '#ffb0d0'] }
+};
+
+for (const p of POIS) {
+  if (!p.position) p.position = fromSun(p.ly, p.l, p.b);
+  if (!p.color) p.color = CATEGORY_COLOR[p.category];
+  if (!p.sub) {
+    const label = p.tag.charAt(0) + p.tag.slice(1).toLowerCase();
+    p.sub = `${label} · ${p.ly.toLocaleString('es-ES')} ly del Sol`;
+  }
+  Object.assign(p, SHAPES[p.id] || {});
+  if (!p.size) p.size = DEFAULT_SIZE[p.category] || 0.8;
+  p.size *= 0.6;
+  if (!p.tint) p.tint = [p.color];
+}
+
+/**
+ * Los tamaños visuales están exagerados varios órdenes de magnitud, así que
+ * objetos vecinos se solaparían. Se separan lo justo para poder visitarlos,
+ * conservando la dirección real en la que se encuentran.
+ */
+(function relaxPositions(iterations = 90) {
+  const movable = POIS.filter(p => !p.explorable && p.category !== 'estructura');
+  for (let it = 0; it < iterations; it++) {
+    for (let i = 0; i < movable.length; i++) {
+      for (let j = i + 1; j < movable.length; j++) {
+        const a = movable[i].position, b = movable[j].position;
+        const min = (movable[i].size + movable[j].size) * 1.6;
+        let dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+        let d = Math.hypot(dx, dy, dz);
+        if (d >= min) continue;
+        if (d < 1e-5) { dx = 1; dy = 0; dz = 0; d = 1; }
+        const push = ((min - d) / d) * 0.5;
+        a.x -= dx * push; a.y -= dy * push; a.z -= dz * push;
+        b.x += dx * push; b.y += dy * push; b.z += dz * push;
+      }
+    }
+  }
+})();
 
 /* ==================================================================
  *  Sistema Solar

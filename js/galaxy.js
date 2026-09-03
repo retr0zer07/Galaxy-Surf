@@ -19,7 +19,8 @@ const STAR_VERT = /* glsl */`
     float tw = 0.78 + 0.22 * sin(uTime * 1.7 + aSeed * 62.83);
     float dist = max(-mv.z, 0.05);
     // Atenuación suave: mantiene las estrellas lejanas como puntos nítidos
-    gl_PointSize = clamp(aSize * uScale * uPixelRatio * tw / pow(dist, 0.72), 0.55, 40.0);
+    // y evita discos enormes al volar entre ellas
+    gl_PointSize = clamp(aSize * uScale * uPixelRatio * tw / pow(dist, 0.72), 0.55, 11.0);
     vColor = aColor;
     vTwinkle = tw;
     gl_Position = projectionMatrix * mv;
@@ -51,9 +52,10 @@ const CLOUD_VERT = /* glsl */`
   void main() {
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     float dist = max(-mv.z, 0.05);
-    gl_PointSize = clamp(aSize * uScale * uPixelRatio / dist, 1.0, 1600.0);
+    gl_PointSize = clamp(aSize * uScale * uPixelRatio / dist, 1.0, 900.0);
     vColor = aColor;
-    vOpacity = aOpacity;
+    // el gas de fondo se desvanece al acercarse para no tapar el destino
+    vOpacity = aOpacity * smoothstep(3.0, 17.0, dist);
     vRot = aRot;
     gl_Position = projectionMatrix * mv;
   }
@@ -81,6 +83,7 @@ const STAR_COLORS = {
   hot:   ['#9ec3ff', '#7fb0ff', '#b9d6ff']
 };
 const pick = (arr, rnd) => arr[Math.floor(rnd() * arr.length)];
+const _mw = new THREE.Vector3();
 
 /* ------------------------------------------------------------------ *
  *  Vía Láctea procedural
@@ -461,29 +464,41 @@ export class Galaxy {
    * -------------------------------------------------------------- */
   #buildMarkers() {
     for (const poi of POIS) {
+      const scale = poi.explorable ? 3.0 : 1.15;
       const mat = new THREE.SpriteMaterial({
         map: this.flareTex,
         color: new THREE.Color(poi.color),
         transparent: true,
-        opacity: poi.explorable ? 0.95 : 0.6,
+        opacity: poi.explorable ? 0.95 : 0.62,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         depthTest: false
       });
       const sprite = new THREE.Sprite(mat);
       sprite.position.set(poi.position.x, poi.position.y, poi.position.z);
-      sprite.scale.setScalar(poi.explorable ? 3.2 : 2.2);
+      sprite.scale.setScalar(scale);
       sprite.renderOrder = 5;
       sprite.userData.poi = poi;
+      sprite.userData.baseScale = scale;
       this.group.add(sprite);
       this.markers.push(sprite);
+    }
+  }
+
+  /** Realza los marcadores de una categoría y atenúa el resto */
+  setFilter(category) {
+    for (const m of this.markers) {
+      const poi = m.userData.poi;
+      const on = category === 'all' || poi.category === category;
+      m.userData.baseScale = poi.explorable ? 3.0 : (on ? 1.9 : 0.7);
+      m.material.opacity = poi.explorable ? 0.95 : (on ? 0.9 : 0.22);
     }
   }
 
   /* --------------------------------------------------------------
    *  Animación
    * -------------------------------------------------------------- */
-  update(dt, timeScale) {
+  update(dt, timeScale, camera) {
     this.time += dt;
     for (const m of this.materials) m.uniforms.uTime.value = this.time;
 
@@ -496,8 +511,14 @@ export class Galaxy {
 
     for (const m of this.markers) {
       const poi = m.userData.poi;
-      const base = poi.explorable ? 3.2 : 2.2;
-      const s = base * (1 + Math.sin(this.time * 2.2 + poi.position.x) * 0.09);
+      const base = m.userData.baseScale;
+      const breathe = 1 + Math.sin(this.time * 2.2 + poi.position.x) * 0.09;
+      // tamaño angular estable: de cerca el marcador no debe tapar el objeto
+      let s = base * breathe;
+      if (camera) {
+        m.getWorldPosition(_mw);
+        s = Math.min(s, camera.position.distanceTo(_mw) * 0.05 * breathe);
+      }
       m.scale.setScalar(s);
     }
   }

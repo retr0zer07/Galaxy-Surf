@@ -31,7 +31,9 @@ python -m http.server 8123
 - carriles de polvo con absorción real y nebulosas de emisión
 - color estelar según población: azules en los brazos, rojizas en el núcleo
 
-**Puntos de interés** — 7 marcadores navegables, dos de ellos explorables: el **Sistema Solar** y **Sagitario A***. El resto muestra ficha informativa.
+**Puntos de interés** — 29 destinos situados con sus coordenadas galácticas reales (longitud *l*, latitud *b* y distancia al Sol), cada uno con representación visual propia generada proceduralmente: nebulosas de emisión y oscuras, nebulosas planetarias anulares, cúmulos abiertos y globulares, cortezas de supernova con púlsar, discos de acreción, burbujas, filamentos moleculares y una galaxia satélite. Dos son explorables a fondo —el **Sistema Solar** y **Sagitario A***—; el resto muestra ficha informativa.
+
+**Navegación** — buscador de destinos (`K` o `Ctrl+K`) con búsqueda sin acentos, filtros por categoría, agrupación y navegación por teclado. `[` y `]` saltan al destino anterior o siguiente.
 
 **Vista del Sistema Solar**
 - Sol con textura de granulación y corona
@@ -53,6 +55,8 @@ python -m http.server 8123
 |---|---|
 | Orbitar | Arrastrar |
 | Zoom | Rueda |
+| Buscar destino | `K` o `Ctrl+K` |
+| Destino anterior / siguiente | `[` / `]` |
 | Seleccionar | Clic en marcador, planeta o etiqueta |
 | Volver | Botón *Volver a la galaxia* o `Esc` |
 | Etiquetas | Botón *ETIQUETAS* o `L` |
@@ -67,11 +71,12 @@ css/style.css
 js/
   main.js       escenas, cámara, transiciones, interacción
   galaxy.js     generación procedural de la galaxia
+  landmarks.js  representación visual de cada destino
   solar.js      sistema solar
   blackhole.js  Sagitario A* por ray marching de geodésicas
   data.js       catálogo astronómico y escalas
   utils.js      ruido, PRNG y texturas de canvas
-  ui.js         HUD, panel y etiquetas 2D
+  ui.js         HUD, panel, navegador y etiquetas 2D
 ```
 
 ## Añadir un nuevo destino explorable

@@ -6,10 +6,11 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { Galaxy } from './galaxy.js';
+import { Landmarks } from './landmarks.js';
 import { SolarSystem } from './solar.js';
 import { BlackHole } from './blackhole.js';
 import { UI } from './ui.js';
-import { POIS, SUN } from './data.js';
+import { POIS, CATEGORIES, SUN } from './data.js';
 import { easeInOut, clamp } from './utils.js';
 
 /* ================================================================
@@ -37,6 +38,7 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
 let galaxy = null;
+let landmarks = null;
 let solar = null;
 let blackhole = null;
 let scene = null;
@@ -48,7 +50,8 @@ const state = {
   flight: null,
   selected: null,
   followBody: null,
-  transitioning: false
+  transitioning: false,
+  filter: 'all'
 };
 
 /* ================================================================
@@ -62,6 +65,9 @@ function boot() {
   galaxy = new Galaxy();
   galaxyScene.add(galaxy.group);
   galaxyScene.fog = null;
+
+  landmarks = new Landmarks(POIS);
+  galaxy.group.add(landmarks.group);
 
   solar = new SolarSystem();
   solarScene.add(solar.group);
@@ -79,12 +85,12 @@ function boot() {
   composer.addPass(new OutputPass());
 
   setupGalaxyMode(true);
-  buildDock();
+  buildNavigator();
   ui.el.speedValue.textContent = state.daysPerSecond + ' d/s';
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, solar, blackhole, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -100,7 +106,7 @@ function setupGalaxyMode(initial = false) {
   bloom.radius = 0.65;
   setResolutionScale(1);
 
-  controls.minDistance = 6;
+  controls.minDistance = 0.5;
   controls.maxDistance = 400;
   controls.target.set(0, 0, 0);
   controls.enablePan = false;
@@ -114,15 +120,27 @@ function setupGalaxyMode(initial = false) {
   ui.setScale('100 000 ly');
   ui.setLabelsVisible(ui.showLabels);
   ui.clearLabels();
-  ui.setDockCurrent(null);
+  ui.setNavCurrent(null);
   ui.setTarget(null);
   state.followBody = null;
 
+  refreshGalaxyLabels();
+}
+
+/** Etiquetas de la galaxia: explorables siempre, el resto según el filtro */
+function refreshGalaxyLabels() {
+  if (state.mode !== 'galaxy') return;
+  ui.clearLabels();
+
   for (const m of galaxy.markers) {
     const poi = m.userData.poi;
+    const inFilter = state.filter === 'all' || poi.category === state.filter;
+    if (!poi.explorable && !inFilter) continue;
+
     ui.addLabel(m, poi.name, poi.explorable ? 'poi' : 'locked', {
       pulse: poi.explorable,
-      offset: 0,
+      priority: poi.explorable ? 2 : (inFilter ? 1 : 0),
+      width: poi.name.length * 7 + 26,
       onClick: () => selectPOI(poi)
     });
   }
@@ -137,6 +155,7 @@ function poiWorldPosition(poi) {
 function selectPOI(poi) {
   state.selected = poi;
   ui.setTarget(poi.name);
+  ui.setNavCurrent(poi.id, poi.name);
   ui.showPanel({
     tag: poi.tag,
     name: poi.name,
@@ -146,7 +165,9 @@ function selectPOI(poi) {
     actionLabel: poi.actionLabel || 'Explorar sistema'
   }, poi.explorable ? () => enterDestination(poi) : null);
 
-  flyTo(poiWorldPosition(poi), poi.explorable ? 11 : 16, 1.5);
+  // Encuadre proporcional al tamaño real del objeto
+  const dist = poi.explorable ? 11 : clamp(poi.size * 3.8, 0.9, 26);
+  flyTo(poiWorldPosition(poi), dist, 1.6);
 }
 
 /* ================================================================
@@ -173,17 +194,20 @@ function setupSolarMode() {
   ui.setTarget('Sol');
 
   ui.addLabel(solar.sunMesh, 'Sol', 'planet active', {
+    priority: 2,
     onClick: () => selectBody(solar.bodies[0])
   });
   for (const b of solar.bodies) {
     if (b.kind === 'planet') {
       ui.addLabel(b.obj, b.data.name, 'planet', {
         maxDist: 900,
+        priority: 2,
         onClick: () => selectBody(b)
       });
     } else if (b.kind === 'moon') {
       ui.addLabel(b.obj, b.data.name, 'moon', {
         maxDist: 90,
+        width: 90,
         onClick: () => selectBody(b)
       });
     }
@@ -243,9 +267,9 @@ function setupBlackHoleMode() {
   ui.setTarget('Sagitario A*');
 
   const a = blackhole.anchors;
-  ui.addLabel(a.horizon, 'Horizonte de sucesos', 'poi', { pulse: true });
-  ui.addLabel(a.photon, 'Esfera de fotones', 'moon');
-  ui.addLabel(a.disk, 'Disco de acreción', 'planet');
+  ui.addLabel(a.horizon, 'Horizonte de sucesos', 'poi', { pulse: true, priority: 2 });
+  ui.addLabel(a.photon, 'Esfera de fotones', 'moon', { priority: 2 });
+  ui.addLabel(a.disk, 'Disco de acreción', 'planet', { priority: 2 });
   ui.setLabelsVisible(ui.showLabels);
 }
 
@@ -450,20 +474,53 @@ ui.el.speed.addEventListener('input', e => {
     : state.daysPerSecond + ' d/s';
 });
 
-/* Dock */
-function buildDock() {
-  const items = POIS.map(p => ({
-    id: p.id, name: p.name, unlocked: p.explorable, locked: false, poi: p
-  }));
-  ui.buildDock(items, item => {
+/* Navegador de destinos */
+const CATEGORY_NAME = Object.fromEntries(CATEGORIES.map(c => [c.id, c.name]));
+
+function formatLy(ly) {
+  if (ly === 0) return '0 ly';
+  if (ly < 1000) return ly.toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' ly';
+  if (ly < 1e6) return Math.round(ly / 1000).toLocaleString('es-ES') + ' kly';
+  return (ly / 1e6).toFixed(1) + ' Mly';
+}
+
+function buildNavigator() {
+  const order = ['sistema', 'nebulosa', 'cumulo', 'remanente', 'exotico', 'estructura'];
+  const items = POIS
+    .map(p => ({
+      id: p.id, name: p.name, tag: p.tag, category: p.category,
+      groupName: CATEGORY_NAME[p.category],
+      color: p.color, unlocked: p.explorable,
+      distance: formatLy(p.ly), poi: p
+    }))
+    .sort((a, b) =>
+      (b.unlocked - a.unlocked) ||
+      (order.indexOf(a.category) - order.indexOf(b.category)) ||
+      (a.poi.ly - b.poi.ly)
+    );
+
+  ui.buildNavigator(CATEGORIES, items, item => {
     if (state.mode !== 'galaxy') {
       exitToGalaxy();
       setTimeout(() => selectPOI(item.poi), 900);
     } else {
       selectPOI(item.poi);
     }
-    ui.setDockCurrent(item.id);
+  }, filter => {
+    state.filter = filter;
+    galaxy.setFilter(filter);
+    refreshGalaxyLabels();
   });
+
+  state.navOrder = items.map(i => i.poi);
+}
+
+/** Salta al destino anterior o siguiente de la lista */
+function stepDestination(dir) {
+  if (state.mode !== 'galaxy' || !state.navOrder) return;
+  const list = state.navOrder;
+  const i = list.indexOf(state.selected);
+  selectPOI(list[(i + dir + list.length) % list.length]);
 }
 
 /* Resize */
@@ -477,11 +534,31 @@ addEventListener('resize', () => {
 
 /* Atajos */
 addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    ui.hidePanel();
-    if (state.mode !== 'galaxy') exitToGalaxy();
+  const typing = e.target === ui.el.navInput;
+
+  if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    ui.toggleNav();
+    return;
   }
-  if (e.key === 'l' || e.key === 'L') ui.setLabelsVisible(!ui.showLabels);
+  if (typing) return;
+
+  if (e.key === '/' || e.key === 'k' || e.key === 'K') {
+    e.preventDefault();
+    ui.toggleNav(true);
+  } else if (e.key === 'Escape') {
+    if (ui.navOpen) ui.toggleNav(false);
+    else {
+      ui.hidePanel();
+      if (state.mode !== 'galaxy') exitToGalaxy();
+    }
+  } else if (e.key === 'l' || e.key === 'L') {
+    ui.setLabelsVisible(!ui.showLabels);
+  } else if (e.key === '[') {
+    stepDestination(-1);
+  } else if (e.key === ']') {
+    stepDestination(1);
+  }
 });
 
 /* ================================================================
@@ -512,7 +589,8 @@ function animate() {
   controls.update();
 
   if (state.mode === 'galaxy') {
-    galaxy.update(dt, state.daysPerSecond);
+    galaxy.update(dt, state.daysPerSecond, camera);
+    landmarks.update(dt);
   } else if (state.mode === 'solar') {
     solar.update(dt, state.daysPerSecond);
   } else {
