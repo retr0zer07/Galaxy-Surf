@@ -10,6 +10,7 @@ import { Landmarks } from './landmarks.js';
 import { SolarSystem } from './solar.js';
 import { BlackHole } from './blackhole.js';
 import { OrionNebula } from './orion.js';
+import { LocalGroup } from './localgroup.js';
 import { UI } from './ui.js';
 import { POIS, CATEGORIES, SUN } from './data.js';
 import { easeInOut, clamp } from './utils.js';
@@ -48,6 +49,7 @@ let landmarks = null;
 let solar = null;
 let blackhole = null;
 let orion = null;
+let localGroup = null;
 let scene = null;
 let composer, bloom, renderPass;
 
@@ -69,6 +71,7 @@ const galaxyScene = new THREE.Scene();
 const solarScene = new THREE.Scene();
 const bhScene = new THREE.Scene();
 const orionScene = new THREE.Scene();
+const localGroupScene = new THREE.Scene();
 
 function boot() {
   galaxy = new Galaxy();
@@ -87,6 +90,9 @@ function boot() {
   orion = new OrionNebula();
   orionScene.add(orion.group);
 
+  localGroup = new LocalGroup();
+  localGroupScene.add(localGroup.group);
+
   scene = galaxyScene;
 
   renderPass = new RenderPass(scene, camera);
@@ -102,7 +108,7 @@ function boot() {
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, landmarks, solar, blackhole, orion, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -128,6 +134,8 @@ function setupGalaxyMode(initial = false) {
   }
 
   ui.setMode('galaxy');
+  document.getElementById('btn-local-group').classList.remove('hidden');
+  document.getElementById('btn-back').lastChild.textContent = ' Volver a la galaxia';
   ui.setContext('Vía Láctea · Galaxia espiral barrada SBbc');
   ui.setScale('100 000 ly');
   ui.setLabelsVisible(ui.showLabels);
@@ -343,6 +351,84 @@ function selectOrionFeature(feature) {
 }
 
 /* ================================================================
+ *  Modo Grupo Local
+ * ================================================================ */
+function setupLocalGroupMode() {
+  state.mode = 'localgroup';
+  scene = localGroupScene;
+  renderPass.scene = localGroupScene;
+  bloom.strength = 0.78;
+  bloom.threshold = 0.34;
+  bloom.radius = 0.7;
+  setResolutionScale(1);
+
+  controls.minDistance = 30;
+  controls.maxDistance = 1300;
+  controls.target.set(190, 0, -25);
+  controls.enablePan = true;
+
+  ui.setMode('localgroup');
+  document.getElementById('btn-local-group').classList.add('hidden');
+  document.getElementById('btn-back').lastChild.textContent = ' Explorar la Vía Láctea';
+  ui.setContext('Grupo Local · ~ 60 galaxias ligadas gravitacionalmente');
+  ui.setScale('~ 5 millones de años luz');
+  ui.clearLabels();
+  ui.setTarget('Grupo Local');
+
+  for (const body of localGroup.bodies) {
+    const data = body.userData.data;
+    ui.addLabel(body, data.name, data.explorable ? 'poi' : 'locked', {
+      pulse: data.explorable,
+      priority: data.explorable ? 2 : 1,
+      width: data.name.length * 7 + 26,
+      onClick: () => selectLocalGalaxy(body)
+    });
+  }
+  ui.setLabelsVisible(ui.showLabels);
+}
+
+function selectLocalGalaxy(body) {
+  const data = body.userData.data;
+  state.selected = { obj: body, data };
+  ui.setTarget(data.name);
+  ui.showPanel({
+    tag: data.type, name: data.name,
+    sub: data.explorable ? 'Nuestra galaxia · acceso disponible' : 'Grupo Local · exploración próximamente',
+    desc: data.desc, facts: data.facts,
+    actionLabel: 'Explorar Vía Láctea'
+  }, data.explorable ? () => enterMilkyWay() : null);
+  flyTo(body.getWorldPosition(new THREE.Vector3()), data.radius * 4.4, 1.5, body);
+}
+
+function enterLocalGroup() {
+  if (state.transitioning) return;
+  state.transitioning = true;
+  ui.hidePanel();
+  ui.fade(true);
+  setTimeout(() => {
+    setupLocalGroupMode();
+    camera.position.set(0, 105, 350);
+    controls.target.set(0, 0, 0);
+    controls.update();
+    ui.fade(false);
+    state.transitioning = false;
+  }, 550);
+}
+
+function enterMilkyWay() {
+  if (state.mode !== 'localgroup') return;
+  state.transitioning = true;
+  ui.hidePanel();
+  ui.fade(true);
+  setTimeout(() => {
+    setupGalaxyMode(true);
+    controls.update();
+    ui.fade(false);
+    state.transitioning = false;
+  }, 550);
+}
+
+/* ================================================================
  *  Transiciones entre escenas
  * ================================================================ */
 const DESTINATIONS = {
@@ -485,6 +571,7 @@ function pickList() {
   if (state.mode === 'galaxy') return galaxy.markers;
   if (state.mode === 'solar') return solar.pickables;
   if (state.mode === 'orion') return orion.pickables;
+  if (state.mode === 'localgroup') return localGroup.pickables;
   return [];
 }
 
@@ -508,6 +595,8 @@ canvas.addEventListener('pointerup', e => {
     if (b) selectBody(b);
   } else if (state.mode === 'orion') {
     selectOrionFeature(hit.object);
+  } else if (state.mode === 'localgroup') {
+    selectLocalGalaxy(hit.object);
   }
 });
 
@@ -521,7 +610,11 @@ canvas.addEventListener('pointermove', e => {
   canvas.style.cursor = hit ? 'pointer' : '';
 });
 
-document.getElementById('btn-back').onclick = exitToGalaxy;
+document.getElementById('btn-back').onclick = () => {
+  if (state.mode === 'localgroup') enterMilkyWay();
+  else exitToGalaxy();
+};
+document.getElementById('btn-local-group').onclick = enterLocalGroup;
 
 /* Herramientas de vista */
 document.querySelectorAll('#view-tools button').forEach(btn => {
@@ -673,6 +766,10 @@ function formatDistance() {
   if (state.mode === 'orion') {
     return d.toFixed(d < 10 ? 1 : 0) + ' ly';
   }
+  if (state.mode === 'localgroup') {
+    const mly = d * 0.00686;
+    return mly.toFixed(mly < 1 ? 2 : 1) + ' Mly';
+  }
   const au = d > 14 ? Math.pow((d - 14) / 26, 1 / 0.62) : d / 14 * 0.1;
   return au.toFixed(au < 10 ? 2 : 1) + ' UA';
 }
@@ -694,6 +791,8 @@ function animate() {
     solar.update(dt, state.daysPerSecond);
   } else if (state.mode === 'orion') {
     orion.update(dt, state.daysPerSecond);
+  } else if (state.mode === 'localgroup') {
+    localGroup.update(dt);
   } else {
     blackhole.update(dt, camera, state.daysPerSecond);
   }

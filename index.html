@@ -47,6 +47,11 @@
   Volver a la galaxia
 </button>
 
+<button id="btn-local-group" title="Ver el Grupo Local">
+  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><circle cx="5" cy="8" r="1.5"/><circle cx="19" cy="7" r="1.5"/><circle cx="18" cy="18" r="1.5"/><path d="M6.3 8.7l4.2 2.2M13.5 11l4.1-3.1M13.4 13l3.5 4"/></svg>
+  Grupo Local
+</button>
+
 <!-- Panel lateral de información -->
 <aside id="panel" class="hidden">
   <button id="panel-close" aria-label="Cerrar">&times;</button>
@@ -2989,6 +2994,156 @@ class OrionNebula {
   }
 }
 
+/* ========== localgroup.js ========== */
+const MEMBERS = [
+  {
+    id: 'milkyway', name: 'Vía Láctea', type: 'GALAXIA ESPIRAL BARRADA · SBbc',
+    position: [-72, 20, 0], radius: 28, color: '#d9e7ff', explorable: true,
+    desc: 'Nuestra galaxia: un disco espiral barrado de gas, polvo y entre 100 y 400 mil millones de estrellas. El Sistema Solar ocupa una posición periférica en el espolón de Orión.',
+    facts: [['Diámetro', '~ 100 000 ly'], ['Estrellas', '100-400 mil millones'], ['Masa', '~ 1.5×10¹² M☉'], ['Tipo', 'SBbc'], ['Centro', 'Sagitario A*'], ['Explorable', 'Sí']]
+  },
+  {
+    id: 'andromeda', name: 'Andrómeda · M31', type: 'GALAXIA ESPIRAL · SA(s)b',
+    position: [76, 18, -10], radius: 38, color: '#b9d2ff',
+    desc: 'La galaxia grande más cercana. Se aproxima a la Vía Láctea a 110 km/s y ambas se fusionarán dentro de aproximadamente 4 500 millones de años, creando una galaxia elíptica.',
+    facts: [['Distancia', '2.54 Mly'], ['Diámetro', '~ 220 000 ly'], ['Estrellas', '~ 1 billón'], ['Masa', '~ 1.5×10¹² M☉'], ['Velocidad radial', '−110 km/s'], ['Explorable', 'Próximamente']]
+  },
+  {
+    id: 'triangulum', name: 'Triángulo · M33', type: 'GALAXIA ESPIRAL · SA(s)cd',
+    position: [142, -52, -8], radius: 22, color: '#91c5ff',
+    desc: 'La tercera galaxia espiral grande del Grupo Local. Carece de un bulbo central prominente y sus brazos contienen algunas de las regiones de formación estelar más luminosas cercanas.',
+    facts: [['Distancia', '2.73 Mly'], ['Diámetro', '~ 60 000 ly'], ['Estrellas', '~ 40 mil millones'], ['Masa', '~ 5×10¹⁰ M☉'], ['Tipo', 'SA(s)cd'], ['Explorable', 'Próximamente']]
+  },
+  {
+    id: 'lmc-local', name: 'Gran Nube de Magallanes', type: 'GALAXIA ENANA IRREGULAR · SBm',
+    position: [-112, -66, 3], radius: 12, color: '#a8cdff',
+    desc: 'La mayor galaxia satélite de la Vía Láctea. Su halo de materia oscura y su encuentro gravitatorio reciente han provocado intensa formación estelar en la Nebulosa de la Tarántula.',
+    facts: [['Distancia', '163 000 ly'], ['Diámetro', '32 000 ly'], ['Masa', '~ 10¹¹ M☉'], ['Estrellas', '~ 30 mil millones'], ['Tipo', 'SBm'], ['Explorable', 'Próximamente']]
+  },
+  {
+    id: 'smc-local', name: 'Pequeña Nube de Magallanes', type: 'GALAXIA ENANA IRREGULAR · Im',
+    position: [-134, -92, 6], radius: 8.5, color: '#b9d9ff',
+    desc: 'Compañera de la Gran Nube de Magallanes y satélite de la Vía Láctea. Un puente de gas neutro conecta ambas nubes, evidencia de su interacción gravitatoria.',
+    facts: [['Distancia', '200 000 ly'], ['Diámetro', '19 000 ly'], ['Masa', '~ 7×10⁹ M☉'], ['Tipo', 'Im'], ['Puente de Magallanes', 'sí'], ['Explorable', 'Próximamente']]
+  },
+  {
+    id: 'm32', name: 'M32', type: 'GALAXIA ENANA ELÍPTICA · cE2',
+    position: [38, 48, -4], radius: 7.5, color: '#f2dfb6',
+    desc: 'Una galaxia elíptica compacta que orbita Andrómeda. Su alta densidad estelar podría ser el núcleo despojado de una galaxia espiral mayor, arrancada por las mareas de M31.',
+    facts: [['Distancia', '2.49 Mly'], ['Diámetro', '6 500 ly'], ['Estrellas', '~ 3 mil millones'], ['Tipo', 'cE2'], ['Anfitriona', 'Andrómeda'], ['Explorable', 'Próximamente']]
+  },
+  {
+    id: 'ngc205', name: 'NGC 205 · M110', type: 'GALAXIA ENANA ELÍPTICA · dE5',
+    position: [111, 58, -4], radius: 9, color: '#d8e3ff',
+    desc: 'Otra galaxia satélite de Andrómeda. A diferencia de la mayoría de las elípticas enanas, conserva gas y polvo, y contiene una población de estrellas jóvenes.',
+    facts: [['Distancia', '2.69 Mly'], ['Diámetro', '17 000 ly'], ['Masa', '~ 1.5×10⁹ M☉'], ['Tipo', 'dE5'], ['Anfitriona', 'Andrómeda'], ['Explorable', 'Próximamente']]
+  }
+];
+
+class LocalGroup {
+  constructor() {
+    this.group = new THREE.Group();
+    this.bodies = [];
+    this.cloudTex = cloudSprite(256, 122);
+    this.flareTex = flareSprite();
+    this.starTex = starSprite(64);
+    this.time = 0;
+    this.rnd = makeRandom(7331);
+
+    for (const member of MEMBERS) this.#buildGalaxy(member);
+    this.#buildFilament();
+  }
+
+  #buildGalaxy(data) {
+    const group = new THREE.Group();
+    group.position.fromArray(data.position);
+    group.rotation.z = this.rnd() * Math.PI;
+
+    const layer = (size, color, opacity, ratio) => {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this.cloudTex, color, transparent: true, opacity,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      s.scale.set(size, size * ratio, 1);
+      group.add(s);
+    };
+
+    const ratio = data.type.includes('ESPIRAL') ? 0.38 : data.type.includes('IRREGULAR') ? 0.68 : 0.82;
+    layer(data.radius * 2.6, data.color, 0.26, ratio);
+    layer(data.radius * 1.05, '#fff1d0', 0.42, ratio * 0.9);
+
+    if (data.type.includes('ESPIRAL')) {
+      const count = 1300;
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      const warm = new THREE.Color('#ffe1a6');
+      const cool = new THREE.Color(data.color);
+      const color = new THREE.Color();
+
+      for (let i = 0; i < count; i++) {
+        const arm = i % 2;
+        const radius = Math.pow(this.rnd(), 0.55) * data.radius * 1.2;
+        const angle = arm * Math.PI + radius * 0.19 + gauss(this.rnd) * 0.22;
+        const i3 = i * 3;
+        positions[i3] = Math.cos(angle) * radius;
+        positions[i3 + 1] = Math.sin(angle) * radius * 0.48;
+        positions[i3 + 2] = gauss(this.rnd) * data.radius * 0.04;
+        color.copy(cool).lerp(warm, Math.pow(1 - radius / (data.radius * 1.2), 2));
+        colors[i3] = color.r; colors[i3 + 1] = color.g; colors[i3 + 2] = color.b;
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const arms = new THREE.Points(geometry, new THREE.PointsMaterial({
+        map: this.starTex, size: 1.2, sizeAttenuation: true, vertexColors: true,
+        transparent: true, opacity: 0.92, depthWrite: false, blending: THREE.AdditiveBlending
+      }));
+      group.add(arms);
+    }
+
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.flareTex, color: '#fff5df', transparent: true, opacity: 0.65,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    core.scale.setScalar(data.radius * 1.25);
+    core.userData.data = data;
+    group.add(core);
+
+    this.group.add(group);
+    this.bodies.push(core);
+  }
+
+  #buildFilament() {
+    const positions = [];
+    for (let i = 0; i < 1800; i++) {
+      const t = this.rnd();
+      positions.push(
+        400 * t - 20,
+        (this.rnd() - 0.5) * 110 * (0.3 + Math.sin(t * Math.PI)),
+        -45 + (this.rnd() - 0.5) * 40
+      );
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const points = new THREE.Points(geometry, new THREE.PointsMaterial({
+      map: this.starTex, size: 1.1, sizeAttenuation: true, color: 0x8c9dc7,
+      transparent: true, opacity: 0.38, depthWrite: false, blending: THREE.AdditiveBlending
+    }));
+    this.group.add(points);
+  }
+
+  update(dt) {
+    this.time += dt;
+    this.group.rotation.y += dt * 0.0015;
+    for (const core of this.bodies) {
+      core.material.rotation += dt * 0.04;
+    }
+  }
+
+  get pickables() { return this.bodies; }
+}
+
 /* ========== ui.js ========== */
 const $ = id => document.getElementById(id);
 
@@ -3304,6 +3459,7 @@ let landmarks = null;
 let solar = null;
 let blackhole = null;
 let orion = null;
+let localGroup = null;
 let scene = null;
 let composer, bloom, renderPass;
 
@@ -3325,6 +3481,7 @@ const galaxyScene = new THREE.Scene();
 const solarScene = new THREE.Scene();
 const bhScene = new THREE.Scene();
 const orionScene = new THREE.Scene();
+const localGroupScene = new THREE.Scene();
 
 function boot() {
   galaxy = new Galaxy();
@@ -3343,6 +3500,9 @@ function boot() {
   orion = new OrionNebula();
   orionScene.add(orion.group);
 
+  localGroup = new LocalGroup();
+  localGroupScene.add(localGroup.group);
+
   scene = galaxyScene;
 
   renderPass = new RenderPass(scene, camera);
@@ -3358,7 +3518,7 @@ function boot() {
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, landmarks, solar, blackhole, orion, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -3384,6 +3544,8 @@ function setupGalaxyMode(initial = false) {
   }
 
   ui.setMode('galaxy');
+  document.getElementById('btn-local-group').classList.remove('hidden');
+  document.getElementById('btn-back').lastChild.textContent = ' Volver a la galaxia';
   ui.setContext('Vía Láctea · Galaxia espiral barrada SBbc');
   ui.setScale('100 000 ly');
   ui.setLabelsVisible(ui.showLabels);
@@ -3599,6 +3761,84 @@ function selectOrionFeature(feature) {
 }
 
 /* ================================================================
+ *  Modo Grupo Local
+ * ================================================================ */
+function setupLocalGroupMode() {
+  state.mode = 'localgroup';
+  scene = localGroupScene;
+  renderPass.scene = localGroupScene;
+  bloom.strength = 0.78;
+  bloom.threshold = 0.34;
+  bloom.radius = 0.7;
+  setResolutionScale(1);
+
+  controls.minDistance = 30;
+  controls.maxDistance = 1300;
+  controls.target.set(190, 0, -25);
+  controls.enablePan = true;
+
+  ui.setMode('localgroup');
+  document.getElementById('btn-local-group').classList.add('hidden');
+  document.getElementById('btn-back').lastChild.textContent = ' Explorar la Vía Láctea';
+  ui.setContext('Grupo Local · ~ 60 galaxias ligadas gravitacionalmente');
+  ui.setScale('~ 5 millones de años luz');
+  ui.clearLabels();
+  ui.setTarget('Grupo Local');
+
+  for (const body of localGroup.bodies) {
+    const data = body.userData.data;
+    ui.addLabel(body, data.name, data.explorable ? 'poi' : 'locked', {
+      pulse: data.explorable,
+      priority: data.explorable ? 2 : 1,
+      width: data.name.length * 7 + 26,
+      onClick: () => selectLocalGalaxy(body)
+    });
+  }
+  ui.setLabelsVisible(ui.showLabels);
+}
+
+function selectLocalGalaxy(body) {
+  const data = body.userData.data;
+  state.selected = { obj: body, data };
+  ui.setTarget(data.name);
+  ui.showPanel({
+    tag: data.type, name: data.name,
+    sub: data.explorable ? 'Nuestra galaxia · acceso disponible' : 'Grupo Local · exploración próximamente',
+    desc: data.desc, facts: data.facts,
+    actionLabel: 'Explorar Vía Láctea'
+  }, data.explorable ? () => enterMilkyWay() : null);
+  flyTo(body.getWorldPosition(new THREE.Vector3()), data.radius * 4.4, 1.5, body);
+}
+
+function enterLocalGroup() {
+  if (state.transitioning) return;
+  state.transitioning = true;
+  ui.hidePanel();
+  ui.fade(true);
+  setTimeout(() => {
+    setupLocalGroupMode();
+    camera.position.set(0, 105, 350);
+    controls.target.set(0, 0, 0);
+    controls.update();
+    ui.fade(false);
+    state.transitioning = false;
+  }, 550);
+}
+
+function enterMilkyWay() {
+  if (state.mode !== 'localgroup') return;
+  state.transitioning = true;
+  ui.hidePanel();
+  ui.fade(true);
+  setTimeout(() => {
+    setupGalaxyMode(true);
+    controls.update();
+    ui.fade(false);
+    state.transitioning = false;
+  }, 550);
+}
+
+/* ================================================================
  *  Transiciones entre escenas
  * ================================================================ */
 const DESTINATIONS = {
@@ -3741,6 +3981,7 @@ function pickList() {
   if (state.mode === 'galaxy') return galaxy.markers;
   if (state.mode === 'solar') return solar.pickables;
   if (state.mode === 'orion') return orion.pickables;
+  if (state.mode === 'localgroup') return localGroup.pickables;
   return [];
 }
 
@@ -3764,6 +4005,8 @@ canvas.addEventListener('pointerup', e => {
     if (b) selectBody(b);
   } else if (state.mode === 'orion') {
     selectOrionFeature(hit.object);
+  } else if (state.mode === 'localgroup') {
+    selectLocalGalaxy(hit.object);
   }
 });
 
@@ -3777,7 +4020,11 @@ canvas.addEventListener('pointermove', e => {
   canvas.style.cursor = hit ? 'pointer' : '';
 });
 
-document.getElementById('btn-back').onclick = exitToGalaxy;
+document.getElementById('btn-back').onclick = () => {
+  if (state.mode === 'localgroup') enterMilkyWay();
+  else exitToGalaxy();
+};
+document.getElementById('btn-local-group').onclick = enterLocalGroup;
 
 /* Herramientas de vista */
 document.querySelectorAll('#view-tools button').forEach(btn => {
@@ -3929,6 +4176,10 @@ function formatDistance() {
   if (state.mode === 'orion') {
     return d.toFixed(d < 10 ? 1 : 0) + ' ly';
   }
+  if (state.mode === 'localgroup') {
+    const mly = d * 0.00686;
+    return mly.toFixed(mly < 1 ? 2 : 1) + ' Mly';
+  }
   const au = d > 14 ? Math.pow((d - 14) / 26, 1 / 0.62) : d / 14 * 0.1;
   return au.toFixed(au < 10 ? 2 : 1) + ' UA';
 }
@@ -3950,6 +4201,8 @@ function animate() {
     solar.update(dt, state.daysPerSecond);
   } else if (state.mode === 'orion') {
     orion.update(dt, state.daysPerSecond);
+  } else if (state.mode === 'localgroup') {
+    localGroup.update(dt);
   } else {
     blackhole.update(dt, camera, state.daysPerSecond);
   }
