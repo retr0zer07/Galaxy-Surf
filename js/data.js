@@ -423,6 +423,23 @@ for (const p of POIS) {
 })();
 
 /* ==================================================================
+ *  Galaxias de fondo
+ *  Decorativas: no aparecen en el navegador ni se pueden seleccionar.
+ * ================================================================== */
+export const BACKGROUND_GALAXIES = [
+  { id: 'm31', name: 'Andrómeda · M31', ly: 2540000, l: 121.17, b: -21.57, size: 250, color: '#b9d2ff', type: 'espiral' },
+  { id: 'm33', name: 'Triángulo · M33', ly: 2730000, l: 133.61, b: -31.33, size: 142, color: '#9cc7ff', type: 'espiral' },
+  { id: 'smc', name: 'Pequeña Nube de Magallanes', ly: 200000, l: 302.80, b: -44.33, size: 42, color: '#b4d8ff', type: 'irregular' },
+  { id: 'sgrd', name: 'Enana de Sagitario', ly: 70000, l: 5.57, b: -14.17, size: 20, color: '#d6c8b0', type: 'esferoidal' },
+  { id: 'fornax', name: 'Enana de Fornax', ly: 490000, l: 237.10, b: -65.65, size: 28, color: '#e8d9bb', type: 'esferoidal' },
+  { id: 'sculptor', name: 'Enana del Escultor', ly: 290000, l: 287.54, b: -83.16, size: 22, color: '#d8e2ff', type: 'esferoidal' },
+  { id: 'draco', name: 'Enana de Draco', ly: 260000, l: 86.37, b: 34.72, size: 20, color: '#c9d5ff', type: 'esferoidal' },
+  { id: 'ursa-minor', name: 'Enana de Osa Menor', ly: 225000, l: 104.97, b: 44.80, size: 18, color: '#e0d9c8', type: 'esferoidal' },
+  { id: 'ngc6822', name: 'Galaxia de Barnard · NGC 6822', ly: 1630000, l: 25.34, b: -18.39, size: 58, color: '#89b7ff', type: 'irregular' },
+  { id: 'ic1613', name: 'IC 1613', ly: 2400000, l: 129.74, b: -60.56, size: 48, color: '#b6d7ff', type: 'irregular' }
+].map(galaxy => ({ ...galaxy, position: fromSun(galaxy.ly, galaxy.l, galaxy.b) }));
+
+/* ==================================================================
  *  Sistema Solar
  *  visualR / visualD son unidades de escena (escala comprimida)
  * ================================================================== */

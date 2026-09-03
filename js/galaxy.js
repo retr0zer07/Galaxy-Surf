@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GALAXY, POIS, armAngle } from './data.js';
+import { GALAXY, POIS, BACKGROUND_GALAXIES, armAngle } from './data.js';
 import { makeRandom, gauss, clamp, lerp, starSprite, cloudSprite, flareSprite } from './utils.js';
 
 /* ------------------------------------------------------------------ *
@@ -106,6 +106,7 @@ export class Galaxy {
     this.#buildNebulae();
     this.#buildCore();
     this.#buildMarkers();
+    this.#buildBackgroundGalaxies();
   }
 
   /* --------- material helpers --------- */
@@ -486,6 +487,34 @@ export class Galaxy {
     }
   }
 
+  #buildBackgroundGalaxies() {
+    this.backgroundGalaxies = [];
+
+    for (const galaxy of BACKGROUND_GALAXIES) {
+      const group = new THREE.Group();
+      group.position.set(galaxy.position.x, galaxy.position.y, galaxy.position.z);
+
+      const addLayer = (size, opacity, color, texture) => {
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: texture, color: new THREE.Color(color), transparent: true, opacity,
+          blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false
+        }));
+        sprite.scale.set(size, size * (galaxy.type === 'espiral' ? 0.48 : 0.74), 1);
+        group.add(sprite);
+      };
+
+      addLayer(galaxy.size, 0.27, galaxy.color, this.cloudTex);
+      addLayer(galaxy.size * 0.42, 0.38, '#fff3d7', this.cloudTex);
+      if (galaxy.type === 'espiral') {
+        addLayer(galaxy.size * 1.15, 0.1, '#799fff', this.flareTex);
+      }
+
+      group.userData.galaxy = galaxy;
+      this.group.add(group);
+      this.backgroundGalaxies.push(group);
+    }
+  }
+
   /** Realza los marcadores de una categoría y atenúa el resto */
   setFilter(category) {
     for (const m of this.markers) {
@@ -544,6 +573,15 @@ export class Galaxy {
     for (const material of this.materials) {
       if (material.userData.baseOpacity === undefined) material.userData.baseOpacity = material.opacity;
       material.opacity = material.userData.baseOpacity * dim;
+    }
+
+    for (const group of this.backgroundGalaxies) {
+      group.traverse(object => {
+        const material = object.material;
+        if (!material) return;
+        if (material.userData.baseOpacity === undefined) material.userData.baseOpacity = material.opacity;
+        material.opacity = material.userData.baseOpacity * dim;
+      });
     }
 
     for (const sprite of this.coreSprites) {

@@ -150,6 +150,14 @@ function refreshGalaxyLabels() {
       onClick: () => selectPOI(poi)
     });
   }
+
+  for (const background of galaxy.backgroundGalaxies) {
+    const item = background.userData.galaxy;
+    ui.addLabel(background, item.name, 'locked', {
+      priority: -1,
+      width: item.name.length * 7 + 26
+    });
+  }
 }
 
 /** Posición en coordenadas de mundo del marcador de un POI (la galaxia rota) */
