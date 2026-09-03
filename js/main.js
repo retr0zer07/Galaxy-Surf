@@ -9,6 +9,7 @@ import { Galaxy } from './galaxy.js';
 import { Landmarks } from './landmarks.js';
 import { SolarSystem } from './solar.js';
 import { BlackHole } from './blackhole.js';
+import { OrionNebula } from './orion.js';
 import { UI } from './ui.js';
 import { POIS, CATEGORIES, SUN } from './data.js';
 import { easeInOut, clamp } from './utils.js';
@@ -46,6 +47,7 @@ let galaxy = null;
 let landmarks = null;
 let solar = null;
 let blackhole = null;
+let orion = null;
 let scene = null;
 let composer, bloom, renderPass;
 
@@ -66,6 +68,7 @@ const state = {
 const galaxyScene = new THREE.Scene();
 const solarScene = new THREE.Scene();
 const bhScene = new THREE.Scene();
+const orionScene = new THREE.Scene();
 
 function boot() {
   galaxy = new Galaxy();
@@ -80,6 +83,9 @@ function boot() {
 
   blackhole = new BlackHole();
   bhScene.add(blackhole.group);
+
+  orion = new OrionNebula();
+  orionScene.add(orion.group);
 
   scene = galaxyScene;
 
@@ -96,7 +102,7 @@ function boot() {
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, landmarks, solar, blackhole, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, orion, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -294,6 +300,49 @@ function setupBlackHoleMode() {
 }
 
 /* ================================================================
+ *  Modo Nebulosa de Orión
+ * ================================================================ */
+function setupOrionMode() {
+  state.mode = 'orion';
+  scene = orionScene;
+  renderPass.scene = orionScene;
+  bloom.strength = 1.1;
+  bloom.threshold = 0.38;
+  bloom.radius = 0.7;
+  setResolutionScale(1);
+
+  controls.minDistance = 2;
+  controls.maxDistance = 150;
+  controls.target.set(0, 0, 0);
+  controls.enablePan = true;
+
+  ui.setMode('orion');
+  ui.setContext('Nebulosa de Orión · M42 · Vivero estelar');
+  ui.setScale('~ 24 años luz');
+  ui.clearLabels();
+  ui.setTarget('Nebulosa de Orión');
+
+  for (const feature of orion.features) {
+    const info = feature.userData.info;
+    ui.addLabel(feature, info.name, 'poi', {
+      pulse: info.name === 'El Trapecio',
+      priority: 2,
+      onClick: () => selectOrionFeature(feature)
+    });
+  }
+  ui.setLabelsVisible(ui.showLabels);
+}
+
+function selectOrionFeature(feature) {
+  const info = feature.userData.info;
+  state.selected = { obj: feature, data: info };
+  ui.setTarget(info.name);
+  ui.showPanel(info);
+  const target = feature.getWorldPosition(new THREE.Vector3());
+  flyTo(target, 11, 1.3, feature);
+}
+
+/* ================================================================
  *  Transiciones entre escenas
  * ================================================================ */
 const DESTINATIONS = {
@@ -305,6 +354,11 @@ const DESTINATIONS = {
   blackhole: {
     setup: setupBlackHoleMode,
     enter: { pos: [0, 4.5, 22], fly: { dist: 46, dur: 2.6 } },
+    back: { dist: 190, dir: [0, 120, 150] }
+  },
+  orion: {
+    setup: setupOrionMode,
+    enter: { pos: [0, 12, 42], fly: { dist: 46, dur: 2.5 } },
     back: { dist: 190, dir: [0, 120, 150] }
   }
 };
@@ -430,6 +484,7 @@ canvas.addEventListener('pointerdown', e => { downPos = { x: e.clientX, y: e.cli
 function pickList() {
   if (state.mode === 'galaxy') return galaxy.markers;
   if (state.mode === 'solar') return solar.pickables;
+  if (state.mode === 'orion') return orion.pickables;
   return [];
 }
 
@@ -451,6 +506,8 @@ canvas.addEventListener('pointerup', e => {
   } else if (state.mode === 'solar') {
     const b = solar.bodies.find(x => x.obj === hit.object);
     if (b) selectBody(b);
+  } else if (state.mode === 'orion') {
+    selectOrionFeature(hit.object);
   }
 });
 
@@ -613,6 +670,9 @@ function formatDistance() {
   if (state.mode === 'blackhole') {
     return d.toFixed(1) + ' rₛ';
   }
+  if (state.mode === 'orion') {
+    return d.toFixed(d < 10 ? 1 : 0) + ' ly';
+  }
   const au = d > 14 ? Math.pow((d - 14) / 26, 1 / 0.62) : d / 14 * 0.1;
   return au.toFixed(au < 10 ? 2 : 1) + ' UA';
 }
@@ -632,6 +692,8 @@ function animate() {
     landmarks.update(dt);
   } else if (state.mode === 'solar') {
     solar.update(dt, state.daysPerSecond);
+  } else if (state.mode === 'orion') {
+    orion.update(dt, state.daysPerSecond);
   } else {
     blackhole.update(dt, camera, state.daysPerSecond);
   }

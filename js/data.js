@@ -172,6 +172,7 @@ export const POIS = [
   {
     id: 'orion', name: 'Nebulosa de Orión', tag: 'REGIÓN HII',
     category: 'nebulosa', ly: 1344, l: 209.01, b: -19.38,
+    explorable: true, actionLabel: 'Entrar en la nebulosa',
     desc: 'El vivero estelar más cercano y estudiado. Más de 700 estrellas jóvenes se forman dentro, muchas rodeadas de discos protoplanetarios donde ahora mismo nacen sistemas solares.',
     facts: [['Diámetro', '24 ly'], ['Edad', '~ 2 Ma'], ['Magnitud', '+4.0'], ['Masa', '2 000 M☉'], ['Trapecio', '4 estrellas O/B']]
   },
