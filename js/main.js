@@ -152,6 +152,10 @@ function poiWorldPosition(poi) {
   return marker.getWorldPosition(new THREE.Vector3());
 }
 
+function poiMarker(poi) {
+  return galaxy.markers.find(m => m.userData.poi === poi);
+}
+
 function selectPOI(poi) {
   state.selected = poi;
   ui.setTarget(poi.name);
@@ -167,7 +171,7 @@ function selectPOI(poi) {
 
   // Encuadre proporcional al tamaño real del objeto
   const dist = poi.explorable ? 11 : clamp(poi.size * 3.8, 0.9, 26);
-  flyTo(poiWorldPosition(poi), dist, 1.6);
+  flyTo(poiWorldPosition(poi), dist, 1.6, poiMarker(poi));
 }
 
 /* ================================================================
@@ -239,7 +243,7 @@ function selectBody(b) {
   const target = new THREE.Vector3();
   b.obj.getWorldPosition(target);
   const r = b.data.visualR || 1;
-  flyTo(target, Math.max(2.2, r * 4.2), 1.4, b);
+  flyTo(target, Math.max(2.2, r * 4.2), 1.4, b.obj);
 }
 
 /* ================================================================
@@ -373,7 +377,7 @@ function updateFlight(dt) {
   const k = easeInOut(clamp(f.t / f.duration, 0, 1));
 
   // Si seguimos un cuerpo en órbita, el destino se recalcula cada fotograma
-  if (f.follow) f.follow.obj.getWorldPosition(f.toTarget);
+  if (f.follow) f.follow.getWorldPosition(f.toTarget);
 
   _toPos.copy(f.toTarget).addScaledVector(f.dir, f.distance);
   camera.position.lerpVectors(f.fromPos, _toPos, k);
@@ -392,9 +396,9 @@ const _fw = new THREE.Vector3();
 const _prev = new THREE.Vector3();
 function updateFollow() {
   if (!state.followBody || state.flight) return;
-  const b = state.followBody;
+  const target = state.followBody;
   _prev.copy(controls.target);
-  b.obj.getWorldPosition(_fw);
+  target.getWorldPosition(_fw);
   const delta = _fw.clone().sub(_prev);
   controls.target.copy(_fw);
   camera.position.add(delta);
