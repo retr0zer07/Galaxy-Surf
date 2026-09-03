@@ -1,0 +1,2502 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Galaxy Surf — Explorador de la Vía Láctea</title>
+<link rel="stylesheet" href="css/style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<!-- Capa de etiquetas 2D proyectadas -->
+<div id="labels"></div>
+
+<!-- Retícula de selección -->
+<div id="reticle"></div>
+
+<!-- HUD superior -->
+<header id="hud-top">
+  <div class="brand">
+    <span class="logo"></span>
+    <div>
+      <h1>GALAXY<span>SURF</span></h1>
+      <p id="hud-context">Vía Láctea · Galaxia espiral barrada SBbc</p>
+    </div>
+  </div>
+
+  <div class="hud-stats">
+    <div class="stat"><label>Escala</label><span id="stat-scale">100 000 ly</span></div>
+    <div class="stat"><label>Objetivo</label><span id="stat-target">—</span></div>
+    <div class="stat"><label>Distancia</label><span id="stat-distance">—</span></div>
+  </div>
+</header>
+
+<!-- Botón volver -->
+<button id="btn-back" class="hidden">
+  <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+  Volver a la galaxia
+</button>
+
+<!-- Panel lateral de información -->
+<aside id="panel" class="hidden">
+  <button id="panel-close" aria-label="Cerrar">&times;</button>
+  <div class="panel-head">
+    <span id="panel-tag">OBJETO</span>
+    <h2 id="panel-title">—</h2>
+    <p id="panel-sub">—</p>
+  </div>
+  <div id="panel-body"></div>
+  <button id="panel-action" class="hidden">Explorar sistema</button>
+</aside>
+
+<!-- Barra inferior: navegación rápida -->
+<nav id="dock">
+  <div class="dock-label">Destinos</div>
+  <div id="dock-items"></div>
+</nav>
+
+<!-- Controles de vista -->
+<div id="view-tools">
+  <button data-action="top" title="Vista cenital">CENITAL</button>
+  <button data-action="edge" title="Vista de canto">DE CANTO</button>
+  <button data-action="labels" title="Mostrar/ocultar etiquetas" class="active">ETIQUETAS</button>
+  <button data-action="orbits" title="Mostrar/ocultar órbitas" class="active hidden">ÓRBITAS</button>
+  <div class="speed">
+    <label>Tiempo <b id="speed-value">1×</b></label>
+    <input id="speed" type="range" min="0" max="200" value="20" />
+  </div>
+</div>
+
+<!-- Transición -->
+<div id="fade"></div>
+
+<!-- Carga -->
+<div id="loader">
+  <div class="loader-core"></div>
+  <p>Generando 246 000 estrellas…</p>
+</div>
+
+<!-- Ayuda -->
+<div id="hint">Arrastra para orbitar · Rueda para acercar · Clic en un marcador para explorar</div>
+
+<!-- BUILD:JS -->
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ========== utils.js ========== */
+/* ------------------------------------------------------------------ *
+ *  PRNG determinista (mulberry32) — la galaxia se ve igual cada vez
+ * ------------------------------------------------------------------ */
+function makeRandom(seed = 20260902) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smoothstep = t => t * t * (3 - 2 * t);
+const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/** Gaussiana aproximada en [-1,1] (suma de uniformes) */
+function gauss(rnd) {
+  return (rnd() + rnd() + rnd() + rnd() + rnd() + rnd() - 3) / 3;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Ruido de valor + fBm (para texturas planetarias procedurales)
+ * ------------------------------------------------------------------ */
+function hash2(x, y, seed) {
+  let h = x * 374761393 + y * 668265263 + seed * 1442695040;
+  h = (h ^ (h >> 13)) * 1274126177;
+  return ((h ^ (h >> 16)) >>> 0) / 4294967296;
+}
+
+function valueNoise(x, y, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = smoothstep(xf), v = smoothstep(yf);
+  const a = hash2(xi, yi, seed), b = hash2(xi + 1, yi, seed);
+  const c = hash2(xi, yi + 1, seed), d = hash2(xi + 1, yi + 1, seed);
+  return lerp(lerp(a, b, u), lerp(c, d, u), v);
+}
+
+function fbm(x, y, seed, octaves = 5, lacunarity = 2.0, gain = 0.5) {
+  let sum = 0, amp = 0.5, freq = 1, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * valueNoise(x * freq, y * freq, seed + i * 31);
+    norm += amp;
+    amp *= gain; freq *= lacunarity;
+  }
+  return sum / norm;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Texturas generadas en canvas (cero assets externos)
+ * ------------------------------------------------------------------ */
+function makeCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return [c, c.getContext('2d')];
+}
+
+/** Punto estelar suave */
+function starSprite(size = 64) {
+  const [c, ctx] = makeCanvas(size, size);
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0.00, 'rgba(255,255,255,1)');
+  g.addColorStop(0.18, 'rgba(255,255,255,0.85)');
+  g.addColorStop(0.42, 'rgba(255,255,255,0.28)');
+  g.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Nube difusa e irregular para nebulosas y bandas de polvo */
+function cloudSprite(size = 256, seed = 7) {
+  const [c, ctx] = makeCanvas(size, size);
+  const img = ctx.createImageData(size, size);
+  const half = size / 2;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (x - half) / half, dy = (y - half) / half;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const falloff = clamp(1 - d, 0, 1);
+      const n = fbm(x / size * 5, y / size * 5, seed, 5);
+      const a = Math.pow(falloff, 2.1) * (0.35 + n * 0.9);
+      const i = (y * size + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = clamp(a, 0, 1) * 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Destello con puntas de difracción para el Sol y estrellas destacadas */
+function flareSprite(size = 256) {
+  const [c, ctx] = makeCanvas(size, size);
+  const h = size / 2;
+  const g = ctx.createRadialGradient(h, h, 0, h, h, h);
+  g.addColorStop(0.0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.12, 'rgba(255,244,214,0.9)');
+  g.addColorStop(0.30, 'rgba(255,190,110,0.35)');
+  g.addColorStop(1.0, 'rgba(255,150,60,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, size, size);
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+    ctx.save();
+    ctx.translate(h, h); ctx.rotate(rot);
+    const len = rot % (Math.PI / 2) === 0 ? h : h * 0.55;
+    const lg = ctx.createLinearGradient(-len, 0, len, 0);
+    lg.addColorStop(0.0, 'rgba(255,220,160,0)');
+    lg.addColorStop(0.5, 'rgba(255,245,220,0.75)');
+    lg.addColorStop(1.0, 'rgba(255,220,160,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(-len, -1.4, len * 2, 2.8);
+    ctx.restore();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/**
+ * Textura equirectangular de planeta generada proceduralmente.
+ * style: 'rocky' | 'gas' | 'ice' | 'earth' | 'lava' | 'sun'
+ */
+function planetTexture(opts) {
+  const {
+    style = 'rocky', seed = 1, width = 1024, height = 512,
+    palette = ['#6b5a4a', '#8d7a63', '#b5a189'],
+    bands = 12, craters = 0, storm = null, polar = 0
+  } = opts;
+
+  const [c, ctx] = makeCanvas(width, height);
+  const img = ctx.createImageData(width, height);
+  const cols = palette.map(hex => new THREE.Color(hex));
+  const tmp = new THREE.Color();
+
+  for (let y = 0; y < height; y++) {
+    const v = y / height;                 // 0 polo norte → 1 polo sur
+    const lat = (v - 0.5) * 2;            // -1..1
+    for (let x = 0; x < width; x++) {
+      const u = x / width;
+      let t;
+
+      if (style === 'gas' || style === 'ice') {
+        // Bandas latitudinales con turbulencia (flujo zonal)
+        const turb = fbm(u * 8, v * 22, seed, 5) - 0.5;
+        const band = Math.sin((v * bands + turb * 1.6) * Math.PI * 2) * 0.5 + 0.5;
+        const detail = fbm(u * 26, v * 60, seed + 9, 4);
+        t = clamp(band * 0.72 + detail * 0.28, 0, 1);
+      } else if (style === 'sun') {
+        const gran = fbm(u * 90, v * 45, seed, 5);
+        const cell = fbm(u * 28, v * 14, seed + 4, 3);
+        t = clamp(gran * 0.55 + cell * 0.45, 0, 1);
+      } else {
+        // Continentes / relieve: fBm esférico aproximado
+        const wrap = Math.cos(u * Math.PI * 2), wrap2 = Math.sin(u * Math.PI * 2);
+        const n1 = fbm((wrap + 1.5) * 3.2, (wrap2 + 1.5) * 3.2 + v * 4.4, seed, 6);
+        const n2 = fbm(u * 14, v * 14, seed + 17, 5);
+        t = clamp(n1 * 0.68 + n2 * 0.32, 0, 1);
+      }
+
+      // Casquetes polares
+      if (polar > 0) {
+        const p = clamp((Math.abs(lat) - (1 - polar)) / polar, 0, 1);
+        t = lerp(t, 1, smoothstep(p) * 0.9);
+      }
+
+      // Selección de color dentro de la paleta
+      const seg = t * (cols.length - 1);
+      const i0 = clamp(Math.floor(seg), 0, cols.length - 2);
+      tmp.copy(cols[i0]).lerp(cols[i0 + 1], seg - i0);
+
+      // Sombreado por latitud (terminador suave, ayuda al volumen)
+      const shade = 1 - Math.pow(Math.abs(lat), 3) * 0.22;
+      const idx = (y * width + x) * 4;
+      img.data[idx] = tmp.r * 255 * shade;
+      img.data[idx + 1] = tmp.g * 255 * shade;
+      img.data[idx + 2] = tmp.b * 255 * shade;
+      img.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  // Cráteres (mundos rocosos y lunas)
+  if (craters > 0) {
+    const rnd = makeRandom(seed * 977 + 13);
+    for (let i = 0; i < craters; i++) {
+      const cx = rnd() * width;
+      const cy = height * 0.12 + rnd() * height * 0.76;
+      const r = (2 + rnd() * 16) * (width / 1024);
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0.0, 'rgba(0,0,0,0.30)');
+      g.addColorStop(0.62, 'rgba(0,0,0,0.12)');
+      g.addColorStop(0.80, 'rgba(255,255,255,0.16)');
+      g.addColorStop(1.0, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Gran mancha (Júpiter / Neptuno)
+  if (storm) {
+    ctx.save();
+    ctx.translate(storm.x * width, storm.y * height);
+    ctx.scale(storm.rx * width, storm.ry * height);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0.0, storm.color);
+    g.addColorStop(0.55, storm.color.replace(/[\d.]+\)$/, '0.55)'));
+    g.addColorStop(1.0, storm.color.replace(/[\d.]+\)$/, '0)'));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/** Textura de anillos: franjas radiales con huecos tipo Cassini */
+function ringTexture(seed = 3, width = 1024) {
+  const [c, ctx] = makeCanvas(width, 8);
+  const img = ctx.createImageData(width, 8);
+  for (let x = 0; x < width; x++) {
+    const u = x / width;
+    const n = fbm(u * 120, 0.5, seed, 4);
+    const fine = Math.sin(u * 260) * 0.5 + 0.5;
+    let a = clamp(n * 0.75 + fine * 0.25, 0, 1);
+    // División de Cassini y borde exterior
+    if (u > 0.62 && u < 0.69) a *= 0.12;
+    if (u > 0.94) a *= clamp((1 - u) / 0.06, 0, 1);
+    if (u < 0.06) a *= clamp(u / 0.06, 0, 1);
+    const lum = 150 + a * 105;
+    for (let y = 0; y < 8; y++) {
+      const i = (y * width + x) * 4;
+      img.data[i] = lum; img.data[i + 1] = lum * 0.94; img.data[i + 2] = lum * 0.8;
+      img.data[i + 3] = a * 235;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/* ========== data.js ========== */
+/* ==================================================================
+ *  Constantes de escala
+ * ================================================================== */
+const GALAXY = {
+  radius: 52,            // 52 u  ≈ 52 000 años luz (radio del disco)
+  coreRadius: 8,         // bulbo central
+  barLength: 14,         // barra estelar
+  armCount: 4,
+  pitch: 0.312,          // ángulo de inclinación de la espiral logarítmica
+  seedRadius: 4.6,       // radio inicial de la espiral
+  diskStars: 168000,
+  bulgeStars: 52000,
+  haloStars: 26000,
+  dustClouds: 900,
+  nebulae: 130
+};
+
+/** Posición angular de la espiral logarítmica de un brazo a radio r */
+function armAngle(r, armIndex) {
+  return Math.log(r / GALAXY.seedRadius) / GALAXY.pitch
+       + (armIndex / GALAXY.armCount) * Math.PI * 2;
+}
+
+/** Punto (x, z) sobre el eje de un brazo */
+function armPoint(r, armIndex) {
+  const a = armAngle(r, armIndex);
+  return { x: Math.cos(a) * r, z: Math.sin(a) * r };
+}
+
+/* Brazos principales de la Vía Láctea (índice → identidad) */
+const ARMS = [
+  { index: 0, name: 'Brazo de Perseo',           color: '#9fc9ff' },
+  { index: 1, name: 'Brazo Escudo-Centauro',     color: '#bad6ff' },
+  { index: 2, name: 'Brazo de Sagitario-Carina', color: '#a8ceff' },
+  { index: 3, name: 'Brazo de Norma',            color: '#c2ddff' }
+];
+
+/* El Sol vive en el Brazo de Orión, un espolón entre Perseo y Sagitario,
+   a ~26 000 ly del centro galáctico. */
+const solR = 26.2;
+const solA = armAngle(solR, 2) + 0.34;
+const SUN_POSITION = {
+  x: Math.cos(solA) * solR,
+  y: 0.32,
+  z: Math.sin(solA) * solR
+};
+
+/* ==================================================================
+ *  Puntos de interés galácticos
+ *  Solo "solar" es explorable por ahora.
+ * ================================================================== */
+function onArm(r, arm, offset = 0, y = 0) {
+  const a = armAngle(r, arm) + offset;
+  return { x: Math.cos(a) * r, y, z: Math.sin(a) * r };
+}
+
+const POIS = [
+  {
+    id: 'solar',
+    name: 'Sistema Solar',
+    tag: 'SISTEMA PLANETARIO',
+    sub: 'Brazo de Orión · 26 000 ly del centro galáctico',
+    position: SUN_POSITION,
+    color: '#ffcf7a',
+    explorable: true,
+    desc: 'Nuestro hogar: una enana amarilla de tipo G2V acompañada de ocho planetas, cinco planetas enanos reconocidos y cientos de miles de cuerpos menores. Orbita el centro galáctico a 230 km/s y completa una vuelta —un año galáctico— cada 225 millones de años.',
+    facts: [
+      ['Edad', '4 568 Ma'],
+      ['Estrella', 'G2V · Sol'],
+      ['Planetas', '8'],
+      ['Diámetro', '~ 0.003 ly'],
+      ['Velocidad orbital', '230 km/s'],
+      ['Año galáctico', '225 Ma']
+    ]
+  },
+  {
+    id: 'sgra',
+    name: 'Sagitario A*',
+    tag: 'AGUJERO NEGRO SUPERMASIVO',
+    sub: 'Centro galáctico · 26 000 ly del Sol',
+    position: { x: 0, y: 0, z: 0 },
+    color: '#ff7a9c',
+    explorable: true,
+    actionLabel: 'Aproximarse al horizonte',
+    desc: 'El agujero negro supermasivo que ancla la rotación de toda la galaxia. Concentra 4,3 millones de masas solares en una región menor que la órbita de Mercurio. Su gravedad curva las trayectorias de la luz: lo que se ve alrededor del disco no es el disco, sino su propia imagen desviada por el espacio-tiempo.',
+    facts: [
+      ['Masa', '4.297×10⁶ M☉'],
+      ['Horizonte', '12.7 M km'],
+      ['Sombra', '~ 52 μas'],
+      ['Distancia', '26 673 ly'],
+      ['Descubierto', '1974'],
+      ['Imagen EHT', '2022']
+    ]
+  },
+  {
+    id: 'orion',
+    name: 'Nebulosa de Orión',
+    tag: 'REGIÓN HII',
+    sub: 'Brazo de Orión · 1 344 ly del Sol',
+    position: onArm(25.0, 2, 0.30, 0.2),
+    color: '#ff9bd0',
+    explorable: false,
+    desc: 'Vivero estelar donde nacen más de 700 estrellas jóvenes envueltas en discos protoplanetarios.',
+    facts: [['Diámetro', '24 ly'], ['Edad', '~ 2 Ma'], ['Magnitud', '+4.0']]
+  },
+  {
+    id: 'pleiades',
+    name: 'Las Pléyades',
+    tag: 'CÚMULO ABIERTO',
+    sub: 'Brazo de Orión · 444 ly del Sol',
+    position: onArm(26.8, 2, 0.38, 0.5),
+    color: '#9fd8ff',
+    explorable: false,
+    desc: 'Cúmulo de estrellas azules calientes formadas hace apenas 100 millones de años, todavía envueltas en nebulosidad de reflexión.',
+    facts: [['Estrellas', '~ 1 000'], ['Edad', '100 Ma'], ['Diámetro', '43 ly']]
+  },
+  {
+    id: 'crab',
+    name: 'Nebulosa del Cangrejo',
+    tag: 'RESTO DE SUPERNOVA',
+    sub: 'Brazo de Perseo · 6 500 ly del Sol',
+    position: onArm(31.5, 0, -0.15, -0.4),
+    color: '#8affc8',
+    explorable: false,
+    desc: 'Los restos en expansión de la supernova observada en el año 1054, con un púlsar girando 30 veces por segundo en su núcleo.',
+    facts: [['Supernova', 'año 1054'], ['Expansión', '1 500 km/s'], ['Púlsar', '30 Hz']]
+  },
+  {
+    id: 'eagle',
+    name: 'Nebulosa del Águila',
+    tag: 'REGIÓN HII',
+    sub: 'Brazo de Sagitario · 7 000 ly del Sol',
+    position: onArm(20.5, 3, 0.12, 0.3),
+    color: '#c9a6ff',
+    explorable: false,
+    desc: 'Hogar de los Pilares de la Creación: columnas de gas y polvo de varios años luz esculpidas por la radiación de estrellas masivas.',
+    facts: [['Pilares', '4-5 ly'], ['Edad', '5.5 Ma'], ['Distancia', '7 000 ly']]
+  },
+  {
+    id: 'omega',
+    name: 'Omega Centauri',
+    tag: 'CÚMULO GLOBULAR',
+    sub: 'Halo galáctico · 17 000 ly del Sol',
+    position: { x: 16, y: -14, z: -22 },
+    color: '#ffe6a8',
+    explorable: false,
+    desc: 'El cúmulo globular más brillante de la galaxia; posiblemente el núcleo superviviente de una galaxia enana devorada por la Vía Láctea.',
+    facts: [['Estrellas', '10 millones'], ['Edad', '11 500 Ma'], ['Diámetro', '150 ly']]
+  }
+];
+
+/* ==================================================================
+ *  Sistema Solar
+ *  visualR / visualD son unidades de escena (escala comprimida)
+ * ================================================================== */
+const rScale = km => Math.max(0.34, Math.pow(km / 6371, 0.42) * 1.62);
+const dScale = au => 14 + Math.pow(au, 0.62) * 26;
+
+const SUN = {
+  id: 'sun',
+  name: 'Sol',
+  tag: 'ESTRELLA · G2V',
+  visualR: 6,
+  color: '#ffb24d',
+  desc: 'Una enana amarilla que concentra el 99,86 % de la masa del sistema. En su núcleo, 600 millones de toneladas de hidrógeno se fusionan en helio cada segundo a 15 millones de grados.',
+  facts: [
+    ['Radio', '696 340 km'],
+    ['Masa', '1.989×10³⁰ kg'],
+    ['Superficie', '5 500 °C'],
+    ['Núcleo', '15 000 000 °C'],
+    ['Edad', '4 600 Ma'],
+    ['Tipo', 'G2V']
+  ]
+};
+
+const PLANETS = [
+  {
+    id: 'mercury', name: 'Mercurio', tag: 'PLANETA ROCOSO',
+    radiusKm: 2439, au: 0.387, periodDays: 87.97, rotationDays: 58.6,
+    tilt: 0.03, ecc: 0.206, inc: 7.0,
+    style: 'rocky', craters: 260, palette: ['#4a423c', '#7d7168', '#a9998c', '#c4b6a6'],
+    color: '#9c8e80',
+    desc: 'El planeta más pequeño y veloz. Sin atmósfera que amortigüe, su superficie oscila entre 430 °C de día y −180 °C de noche, y conserva cicatrices de impactos de hace 4 000 millones de años.',
+    facts: [['Diámetro', '4 879 km'], ['Día solar', '176 días'], ['Año', '88 días'], ['Temp.', '−180 / 430 °C'], ['Gravedad', '3.7 m/s²'], ['Lunas', '0']],
+    moons: []
+  },
+  {
+    id: 'venus', name: 'Venus', tag: 'PLANETA ROCOSO',
+    radiusKm: 6051, au: 0.723, periodDays: 224.7, rotationDays: -243,
+    tilt: 177.4, ecc: 0.007, inc: 3.39,
+    style: 'gas', bands: 7, palette: ['#8a6134', '#c9995a', '#e8c48d', '#fbe6bd'],
+    color: '#e8c48d',
+    desc: 'Envuelto en una atmósfera de CO₂ 90 veces más densa que la terrestre y nubes de ácido sulfúrico. El efecto invernadero desbocado lo mantiene a 464 °C: el mundo más caliente del sistema.',
+    facts: [['Diámetro', '12 104 km'], ['Día solar', '117 días'], ['Año', '225 días'], ['Temp.', '464 °C'], ['Presión', '92 atm'], ['Lunas', '0']],
+    moons: []
+  },
+  {
+    id: 'earth', name: 'Tierra', tag: 'PLANETA ROCOSO · HABITADO',
+    radiusKm: 6371, au: 1.0, periodDays: 365.26, rotationDays: 0.997,
+    tilt: 23.44, ecc: 0.017, inc: 0,
+    style: 'earth', polar: 0.16, clouds: true, atmosphere: '#5aa8ff',
+    palette: ['#08234a', '#0d3f7a', '#1a6b8f', '#2f7d4a', '#6d8f45', '#b9a37a'],
+    color: '#3d8fd6',
+    desc: 'El único mundo conocido con agua líquida estable en superficie, tectónica de placas activa y biosfera. Su campo magnético desvía el viento solar y su Luna estabiliza la inclinación axial.',
+    facts: [['Diámetro', '12 742 km'], ['Día', '23h 56m'], ['Año', '365.26 días'], ['Temp. media', '15 °C'], ['Atmósfera', 'N₂ 78 % · O₂ 21 %'], ['Lunas', '1']],
+    moons: [
+      { name: 'Luna', radiusKm: 1737, dist: 3.1, periodDays: 27.3, color: '#b8b4ac', craters: 200, note: '384 400 km' }
+    ]
+  },
+  {
+    id: 'mars', name: 'Marte', tag: 'PLANETA ROCOSO',
+    radiusKm: 3389, au: 1.524, periodDays: 686.98, rotationDays: 1.026,
+    tilt: 25.19, ecc: 0.093, inc: 1.85,
+    style: 'rocky', craters: 150, polar: 0.12,
+    palette: ['#5c2316', '#8f4526', '#c46b3d', '#e0996b'],
+    color: '#c1502e',
+    desc: 'El planeta rojo debe su color al óxido de hierro. Alberga el Monte Olimpo —el mayor volcán del sistema, de 22 km— y el Valles Marineris, un cañón de 4 000 km. Bajo sus polos hay agua helada.',
+    facts: [['Diámetro', '6 779 km'], ['Día', '24h 37m'], ['Año', '687 días'], ['Temp.', '−63 °C'], ['Gravedad', '3.7 m/s²'], ['Lunas', '2']],
+    moons: [
+      { name: 'Fobos', radiusKm: 11, dist: 2.2, periodDays: 0.32, color: '#8a7f72', craters: 90, note: '9 376 km' },
+      { name: 'Deimos', radiusKm: 6, dist: 3.2, periodDays: 1.26, color: '#9a8f80', craters: 60, note: '23 463 km' }
+    ]
+  },
+  {
+    id: 'jupiter', name: 'Júpiter', tag: 'GIGANTE GASEOSO',
+    radiusKm: 69911, au: 5.203, periodDays: 4332.6, rotationDays: 0.414,
+    tilt: 3.13, ecc: 0.048, inc: 1.3,
+    style: 'gas', bands: 16,
+    palette: ['#6b452c', '#9c6b3f', '#c99a63', '#e6cfa8', '#f4e6cd'],
+    storm: { x: 0.32, y: 0.62, rx: 0.075, ry: 0.038, color: 'rgba(190,80,50,0.85)' },
+    color: '#c99a63',
+    desc: 'Más masivo que todos los demás planetas juntos. Sus bandas son corrientes en chorro a 600 km/h y la Gran Mancha Roja es un anticiclón que lleva al menos 190 años activo. Actúa como escudo gravitatorio del sistema interior.',
+    facts: [['Diámetro', '139 820 km'], ['Día', '9h 56m'], ['Año', '11.86 años'], ['Temp.', '−145 °C'], ['Masa', '318 Tierras'], ['Lunas', '95']],
+    moons: [
+      { name: 'Ío', radiusKm: 1821, dist: 2.4, periodDays: 1.77, color: '#e8d26a', note: 'Volcánica' },
+      { name: 'Europa', radiusKm: 1560, dist: 3.1, periodDays: 3.55, color: '#d8cbb4', note: 'Océano bajo hielo' },
+      { name: 'Ganímedes', radiusKm: 2634, dist: 4.0, periodDays: 7.15, color: '#a89b8c', craters: 120, note: 'La mayor luna' },
+      { name: 'Calisto', radiusKm: 2410, dist: 5.1, periodDays: 16.69, color: '#7a7066', craters: 180, note: 'Muy craterizada' }
+    ]
+  },
+  {
+    id: 'saturn', name: 'Saturno', tag: 'GIGANTE GASEOSO',
+    radiusKm: 58232, au: 9.537, periodDays: 10759, rotationDays: 0.444,
+    tilt: 26.73, ecc: 0.054, inc: 2.49,
+    style: 'gas', bands: 11,
+    palette: ['#8a6a3c', '#b99a63', '#dcc593', '#f2e3c0'],
+    rings: { inner: 1.35, outer: 2.42 },
+    color: '#dcc593',
+    desc: 'Su densidad media es menor que la del agua. El sistema de anillos se extiende 280 000 km pero apenas tiene decenas de metros de espesor: miles de millones de fragmentos de hielo en órbita.',
+    facts: [['Diámetro', '116 460 km'], ['Día', '10h 33m'], ['Año', '29.5 años'], ['Temp.', '−178 °C'], ['Anillos', '280 000 km'], ['Lunas', '146']],
+    moons: [
+      { name: 'Titán', radiusKm: 2574, dist: 3.6, periodDays: 15.95, color: '#d9a955', note: 'Atmósfera densa' },
+      { name: 'Encélado', radiusKm: 252, dist: 2.9, periodDays: 1.37, color: '#f0f4f7', note: 'Géiseres de agua' },
+      { name: 'Rea', radiusKm: 763, dist: 4.5, periodDays: 4.52, color: '#c3bdb4', craters: 100, note: 'Hielo y roca' }
+    ]
+  },
+  {
+    id: 'uranus', name: 'Urano', tag: 'GIGANTE HELADO',
+    radiusKm: 25362, au: 19.19, periodDays: 30687, rotationDays: -0.718,
+    tilt: 97.77, ecc: 0.047, inc: 0.77,
+    style: 'ice', bands: 5,
+    palette: ['#3f8f9c', '#68b8bd', '#a6dee0', '#d9f2f2'],
+    rings: { inner: 1.6, outer: 2.0, faint: true },
+    color: '#8fd6dc',
+    desc: 'Rueda de lado: su eje está inclinado 98°, probablemente por una colisión titánica. El metano atmosférico absorbe el rojo y le da su tono cian. Sus estaciones duran 21 años terrestres.',
+    facts: [['Diámetro', '50 724 km'], ['Día', '17h 14m'], ['Año', '84 años'], ['Temp.', '−224 °C'], ['Inclinación', '97.8°'], ['Lunas', '28']],
+    moons: [
+      { name: 'Titania', radiusKm: 788, dist: 3.0, periodDays: 8.7, color: '#a89e94', craters: 80, note: 'Cañones profundos' },
+      { name: 'Miranda', radiusKm: 235, dist: 2.2, periodDays: 1.41, color: '#bdb6ac', craters: 60, note: 'Relieve caótico' }
+    ]
+  },
+  {
+    id: 'neptune', name: 'Neptuno', tag: 'GIGANTE HELADO',
+    radiusKm: 24622, au: 30.07, periodDays: 60190, rotationDays: 0.671,
+    tilt: 28.32, ecc: 0.009, inc: 1.77,
+    style: 'ice', bands: 6,
+    palette: ['#17357f', '#2a56b8', '#4f83dd', '#9dc2f0'],
+    storm: { x: 0.6, y: 0.6, rx: 0.06, ry: 0.033, color: 'rgba(12,26,70,0.85)' },
+    color: '#3f6fd8',
+    desc: 'El mundo más ventoso conocido: sus tormentas superan los 2 100 km/h. Fue el primer planeta descubierto por cálculo matemático antes que por observación, en 1846.',
+    facts: [['Diámetro', '49 244 km'], ['Día', '16h 6m'], ['Año', '165 años'], ['Temp.', '−214 °C'], ['Vientos', '2 100 km/h'], ['Lunas', '16']],
+    moons: [
+      { name: 'Tritón', radiusKm: 1353, dist: 3.2, periodDays: -5.88, color: '#cbc3bb', note: 'Órbita retrógrada' }
+    ]
+  }
+];
+
+/* Cinturones */
+const ASTEROID_BELT = { inner: dScale(2.1), outer: dScale(3.4), count: 3800 };
+const KUIPER_BELT = { inner: dScale(31), outer: dScale(49), count: 4200 };
+
+/* Aplica la escala visual a todo el catálogo */
+function buildVisualScale() {
+  for (const p of PLANETS) {
+    p.visualR = rScale(p.radiusKm);
+    p.visualD = dScale(p.au);
+    for (const m of p.moons) {
+      m.visualR = Math.max(0.12, Math.pow(m.radiusKm / 6371, 0.4) * 0.9);
+      m.visualD = p.visualR * m.dist + m.visualR * 1.5;
+    }
+  }
+}
+buildVisualScale();
+
+/* ========== galaxy.js ========== */
+/* ------------------------------------------------------------------ *
+ *  Shaders
+ * ------------------------------------------------------------------ */
+const STAR_VERT = /* glsl */`
+  attribute float aSize;
+  attribute vec3  aColor;
+  attribute float aSeed;
+  uniform float uTime;
+  uniform float uPixelRatio;
+  uniform float uScale;
+  varying vec3  vColor;
+  varying float vTwinkle;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    float tw = 0.78 + 0.22 * sin(uTime * 1.7 + aSeed * 62.83);
+    float dist = max(-mv.z, 0.05);
+    // Atenuación suave: mantiene las estrellas lejanas como puntos nítidos
+    gl_PointSize = clamp(aSize * uScale * uPixelRatio * tw / pow(dist, 0.72), 0.55, 40.0);
+    vColor = aColor;
+    vTwinkle = tw;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const STAR_FRAG = /* glsl */`
+  varying vec3  vColor;
+  varying float vTwinkle;
+  void main() {
+    vec2 uv = gl_PointCoord - 0.5;
+    float d = dot(uv, uv);
+    if (d > 0.25) discard;
+    float a = pow(1.0 - d * 4.0, 2.6);
+    gl_FragColor = vec4(vColor * a * 0.95, a * vTwinkle);
+  }
+`;
+
+const CLOUD_VERT = /* glsl */`
+  attribute float aSize;
+  attribute vec3  aColor;
+  attribute float aOpacity;
+  attribute float aRot;
+  uniform float uPixelRatio;
+  uniform float uScale;
+  varying vec3  vColor;
+  varying float vOpacity;
+  varying float vRot;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    float dist = max(-mv.z, 0.05);
+    gl_PointSize = clamp(aSize * uScale * uPixelRatio / dist, 1.0, 1600.0);
+    vColor = aColor;
+    vOpacity = aOpacity;
+    vRot = aRot;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const CLOUD_FRAG = /* glsl */`
+  uniform sampler2D uMap;
+  varying vec3  vColor;
+  varying float vOpacity;
+  varying float vRot;
+  void main() {
+    vec2 uv = gl_PointCoord - 0.5;
+    float s = sin(vRot), c = cos(vRot);
+    uv = vec2(uv.x * c - uv.y * s, uv.x * s + uv.y * c) + 0.5;
+    vec4 tex = texture2D(uMap, uv);
+    gl_FragColor = vec4(vColor, tex.a * vOpacity);
+  }
+`;
+
+/* Paleta estelar por clase espectral */
+const STAR_COLORS = {
+  young: ['#cfe4ff', '#a9ccff', '#8fbcff', '#dfeaff', '#ffffff'],
+  mid:   ['#fff4e2', '#ffe9c9', '#ffdcae', '#f7f2ea'],
+  old:   ['#ffc98a', '#ff9f63', '#ffb27a', '#ffd7a6'],
+  hot:   ['#9ec3ff', '#7fb0ff', '#b9d6ff']
+};
+const pick = (arr, rnd) => arr[Math.floor(rnd() * arr.length)];
+
+/* ------------------------------------------------------------------ *
+ *  Vía Láctea procedural
+ * ------------------------------------------------------------------ */
+class Galaxy {
+  constructor() {
+    this.group = new THREE.Group();
+    this.markers = [];
+    this.rnd = makeRandom(20260902);
+    this.starTex = starSprite();
+    this.cloudTex = cloudSprite(256, 11);
+    this.flareTex = flareSprite();
+    this.materials = [];
+    this.time = 0;
+
+    this.#buildDisk();
+    this.#buildBulge();
+    this.#buildHalo();
+    this.#buildDust();
+    this.#buildNebulae();
+    this.#buildCore();
+    this.#buildMarkers();
+  }
+
+  /* --------- material helpers --------- */
+  #starMaterial(scale = 46) {
+    const m = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uPixelRatio: { value: Math.min(devicePixelRatio, 2) },
+        uScale: { value: scale }
+      },
+      vertexShader: STAR_VERT,
+      fragmentShader: STAR_FRAG,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    this.materials.push(m);
+    return m;
+  }
+
+  #cloudMaterial(blending, scale = 260) {
+    const m = new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: this.cloudTex },
+        uPixelRatio: { value: Math.min(devicePixelRatio, 2) },
+        uScale: { value: scale }
+      },
+      vertexShader: CLOUD_VERT,
+      fragmentShader: CLOUD_FRAG,
+      transparent: true,
+      depthWrite: false,
+      blending
+    });
+    // El polvo debe absorber luz, no añadirla: dst *= (1 - alpha)
+    if (blending === THREE.CustomBlending) {
+      m.blendEquation = THREE.AddEquation;
+      m.blendSrc = THREE.ZeroFactor;
+      m.blendDst = THREE.OneMinusSrcAlphaFactor;
+    }
+    return m;
+  }
+
+  #points(arrays, material, renderOrder = 0) {
+    const g = new THREE.BufferGeometry();
+    for (const [name, data, size] of arrays) {
+      g.setAttribute(name, new THREE.BufferAttribute(data, size));
+    }
+    g.computeBoundingSphere();
+    const p = new THREE.Points(g, material);
+    p.frustumCulled = false;
+    p.renderOrder = renderOrder;
+    this.group.add(p);
+    return p;
+  }
+
+  /* --------------------------------------------------------------
+   *  Disco: brazos espirales + población de campo + cúmulos jóvenes
+   * -------------------------------------------------------------- */
+  #buildDisk() {
+    const rnd = this.rnd;
+    const N = GALAXY.diskStars;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const siz = new Float32Array(N);
+    const sed = new Float32Array(N);
+    const c = new THREE.Color();
+
+    // Cúmulos de formación estelar repartidos sobre los brazos
+    const clusters = [];
+    for (let i = 0; i < 190; i++) {
+      const arm = i % GALAXY.armCount;
+      const r = lerp(GALAXY.coreRadius, GALAXY.radius * 0.96, Math.pow(rnd(), 0.75));
+      const a = armAngle(r, arm) + gauss(rnd) * 0.06;
+      clusters.push({
+        x: Math.cos(a) * r, z: Math.sin(a) * r,
+        y: gauss(rnd) * 0.35,
+        rad: 0.5 + rnd() * 1.7,
+        hot: rnd() < 0.55
+      });
+    }
+
+    for (let i = 0; i < N; i++) {
+      let x, y, z, tightness, hot = false;
+
+      const roll = rnd();
+      if (roll < 0.10) {
+        // --- estrellas nacidas en cúmulos ---
+        const cl = clusters[Math.floor(rnd() * clusters.length)];
+        x = cl.x + gauss(rnd) * cl.rad;
+        z = cl.z + gauss(rnd) * cl.rad;
+        y = cl.y + gauss(rnd) * cl.rad * 0.35;
+        tightness = 0.94;
+        hot = cl.hot;
+      } else {
+        // --- perfil radial exponencial truncado ---
+        let r = -11.5 * Math.log(1 - rnd() * 0.9995);
+        r = clamp(r, GALAXY.coreRadius * 0.42, GALAXY.radius);
+
+        const arm = Math.floor(rnd() * GALAXY.armCount);
+        // dispersión angular: brazos nítidos fuera, difusos en el interior
+        const spread = 0.27 + 1.3 / r;
+        const off = gauss(rnd);
+        const field = roll > 0.78;          // 22 % población de campo (inter-brazo)
+        const a = field
+          ? rnd() * Math.PI * 2
+          : armAngle(r, arm) + off * spread;
+
+        // ligera deriva: el borde exterior se abre (flare del disco)
+        const rr = r * (1 + gauss(rnd) * 0.035);
+        x = Math.cos(a) * rr;
+        z = Math.sin(a) * rr;
+
+        const thick = 0.30 + 0.55 * Math.exp(-r / 16) + r * 0.011;
+        y = gauss(rnd) * thick * (field ? 1.7 : 1.0);
+
+        tightness = field ? 0 : clamp(1 - Math.abs(off), 0, 1);
+      }
+
+      const r2 = Math.hypot(x, z);
+
+      // Color: núcleo del brazo → azul joven; campo y centro → amarillo/naranja
+      let hex;
+      if (hot || tightness > 0.86) hex = pick(STAR_COLORS.hot, rnd);
+      else if (tightness > 0.45) hex = pick(STAR_COLORS.young, rnd);
+      else if (r2 < GALAXY.coreRadius * 1.6) hex = pick(STAR_COLORS.old, rnd);
+      else hex = pick(rnd() < 0.6 ? STAR_COLORS.mid : STAR_COLORS.old, rnd);
+      c.set(hex);
+
+      // Gradiente de metalicidad: solo el interior se vuelve rojizo
+      const warm = Math.pow(clamp(1 - r2 / (GALAXY.radius * 0.45), 0, 1), 1.6) * 0.30;
+      c.r = clamp(c.r + warm * 0.5, 0, 1);
+      c.b = clamp(c.b - warm * 0.55, 0, 1);
+
+      const i3 = i * 3;
+      pos[i3] = x; pos[i3 + 1] = y; pos[i3 + 2] = z;
+      col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
+
+      // Distribución de luminosidad: muchas débiles, pocas muy brillantes
+      const lum = Math.pow(rnd(), 3.4);
+      siz[i] = 0.45 + lum * 2.4 * (tightness > 0 ? 1 : 0.6) + (hot ? 0.8 : 0);
+      sed[i] = rnd();
+    }
+
+    this.disk = this.#points([
+      ['position', pos, 3], ['aColor', col, 3], ['aSize', siz, 1], ['aSeed', sed, 1]
+    ], this.#starMaterial());
+  }
+
+  /* --------------------------------------------------------------
+   *  Bulbo elipsoidal + barra estelar central
+   * -------------------------------------------------------------- */
+  #buildBulge() {
+    const rnd = this.rnd;
+    const N = GALAXY.bulgeStars;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const siz = new Float32Array(N);
+    const sed = new Float32Array(N);
+    const c = new THREE.Color();
+    const barAngle = 0.48;                    // la barra está inclinada ~27°
+    const cosB = Math.cos(barAngle), sinB = Math.sin(barAngle);
+
+    for (let i = 0; i < N; i++) {
+      const inBar = rnd() < 0.42;
+      let x, y, z;
+
+      if (inBar) {
+        // Elipsoide alargado (barra)
+        const t = gauss(rnd);
+        const bx = t * GALAXY.barLength * 0.5;
+        const bz = gauss(rnd) * 1.9;
+        y = gauss(rnd) * 1.1;
+        x = bx * cosB - bz * sinB;
+        z = bx * sinB + bz * cosB;
+      } else {
+        // Esferoide achatado con densidad ~ r^-2
+        const r = Math.pow(rnd(), 2.1) * GALAXY.coreRadius;
+        const u = rnd() * 2 - 1;
+        const phi = rnd() * Math.PI * 2;
+        const s = Math.sqrt(1 - u * u);
+        x = r * s * Math.cos(phi);
+        z = r * s * Math.sin(phi);
+        y = r * u * 0.52;
+      }
+
+      c.set(pick(rnd() < 0.72 ? STAR_COLORS.old : STAR_COLORS.mid, rnd));
+      const d = Math.hypot(x, y, z);
+      const glow = clamp(1 - d / GALAXY.coreRadius, 0, 1);
+      c.r = clamp(c.r * 0.85 + glow * 0.15, 0, 1);
+      c.g = clamp(c.g * 0.78 + glow * 0.06, 0, 1);
+      c.b = clamp(c.b * 0.7, 0, 1);
+
+      const i3 = i * 3;
+      pos[i3] = x; pos[i3 + 1] = y; pos[i3 + 2] = z;
+      col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
+      siz[i] = 0.38 + Math.pow(rnd(), 3.2) * 1.5;
+      sed[i] = rnd();
+    }
+
+    this.bulge = this.#points([
+      ['position', pos, 3], ['aColor', col, 3], ['aSize', siz, 1], ['aSeed', sed, 1]
+    ], this.#starMaterial());
+  }
+
+  /* --------------------------------------------------------------
+   *  Halo esférico + cúmulos globulares
+   * -------------------------------------------------------------- */
+  #buildHalo() {
+    const rnd = this.rnd;
+    const globulars = [];
+    for (let i = 0; i < 46; i++) {
+      const r = GALAXY.radius * (0.25 + Math.pow(rnd(), 0.6) * 1.05);
+      const u = rnd() * 2 - 1, phi = rnd() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      globulars.push({
+        x: r * s * Math.cos(phi), y: r * u * 0.85, z: r * s * Math.sin(phi),
+        rad: 0.35 + rnd() * 0.8
+      });
+    }
+
+    const N = GALAXY.haloStars;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const siz = new Float32Array(N);
+    const sed = new Float32Array(N);
+    const c = new THREE.Color();
+
+    for (let i = 0; i < N; i++) {
+      let x, y, z;
+      if (rnd() < 0.45) {
+        const g = globulars[Math.floor(rnd() * globulars.length)];
+        const rr = Math.pow(rnd(), 2.4) * g.rad;
+        const u = rnd() * 2 - 1, phi = rnd() * Math.PI * 2;
+        const s = Math.sqrt(1 - u * u);
+        x = g.x + rr * s * Math.cos(phi);
+        y = g.y + rr * u;
+        z = g.z + rr * s * Math.sin(phi);
+      } else {
+        const r = GALAXY.radius * (0.2 + Math.pow(rnd(), 0.5) * 1.2);
+        const u = rnd() * 2 - 1, phi = rnd() * Math.PI * 2;
+        const s = Math.sqrt(1 - u * u);
+        x = r * s * Math.cos(phi);
+        y = r * u * 0.8;
+        z = r * s * Math.sin(phi);
+      }
+
+      c.set(pick(STAR_COLORS.old, rnd)).multiplyScalar(0.5);
+      const i3 = i * 3;
+      pos[i3] = x; pos[i3 + 1] = y; pos[i3 + 2] = z;
+      col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
+      siz[i] = 0.3 + Math.pow(rnd(), 5) * 1.4;
+      sed[i] = rnd();
+    }
+
+    this.halo = this.#points([
+      ['position', pos, 3], ['aColor', col, 3], ['aSize', siz, 1], ['aSeed', sed, 1]
+    ], this.#starMaterial());
+  }
+
+  /* --------------------------------------------------------------
+   *  Carriles de polvo: siguen el borde interior de cada brazo
+   * -------------------------------------------------------------- */
+  #buildDust() {
+    const rnd = this.rnd;
+    const N = GALAXY.dustClouds;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const siz = new Float32Array(N);
+    const opa = new Float32Array(N);
+    const rot = new Float32Array(N);
+    const c = new THREE.Color();
+
+    for (let i = 0; i < N; i++) {
+      const arm = i % GALAXY.armCount;
+      const r = lerp(GALAXY.coreRadius * 0.8, GALAXY.radius * 0.94, Math.pow(rnd(), 0.62));
+      // desplazamiento hacia el borde interior del brazo (donde se comprime el gas)
+      const a = armAngle(r, arm) - 0.075 + gauss(rnd) * 0.075;
+      const i3 = i * 3;
+      pos[i3] = Math.cos(a) * r;
+      pos[i3 + 1] = gauss(rnd) * 0.42;
+      pos[i3 + 2] = Math.sin(a) * r;
+
+      c.setHSL(0.07, 0.4, 0.05);
+      col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
+
+      siz[i] = (4 + rnd() * 9) * (0.45 + r / GALAXY.radius);
+      opa[i] = 0.22 + rnd() * 0.4;
+      rot[i] = rnd() * Math.PI * 2;
+    }
+
+    this.dust = this.#points([
+      ['position', pos, 3], ['aColor', col, 3], ['aSize', siz, 1],
+      ['aOpacity', opa, 1], ['aRot', rot, 1]
+    ], this.#cloudMaterial(THREE.CustomBlending, 300), 2);
+  }
+
+  /* --------------------------------------------------------------
+   *  Nebulosas de emisión sobre los brazos
+   * -------------------------------------------------------------- */
+  #buildNebulae() {
+    const rnd = this.rnd;
+    const N = GALAXY.nebulae;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const siz = new Float32Array(N);
+    const opa = new Float32Array(N);
+    const rot = new Float32Array(N);
+    const c = new THREE.Color();
+    const hues = [0.92, 0.58, 0.75, 0.05, 0.48];
+
+    for (let i = 0; i < N; i++) {
+      const arm = Math.floor(rnd() * GALAXY.armCount);
+      const r = lerp(GALAXY.coreRadius, GALAXY.radius * 0.92, Math.pow(rnd(), 0.7));
+      const a = armAngle(r, arm) + gauss(rnd) * 0.09;
+      const i3 = i * 3;
+      pos[i3] = Math.cos(a) * r;
+      pos[i3 + 1] = gauss(rnd) * 0.4;
+      pos[i3 + 2] = Math.sin(a) * r;
+
+      c.setHSL(hues[Math.floor(rnd() * hues.length)] + gauss(rnd) * 0.03, 0.85, 0.55);
+      col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
+
+      siz[i] = 2 + rnd() * 6;
+      opa[i] = 0.14 + rnd() * 0.3;
+      rot[i] = rnd() * Math.PI * 2;
+    }
+
+    this.nebulae = this.#points([
+      ['position', pos, 3], ['aColor', col, 3], ['aSize', siz, 1],
+      ['aOpacity', opa, 1], ['aRot', rot, 1]
+    ], this.#cloudMaterial(THREE.AdditiveBlending, 300), 1);
+  }
+
+  /* --------------------------------------------------------------
+   *  Resplandor del núcleo galáctico
+   * -------------------------------------------------------------- */
+  #buildCore() {
+    const mk = (size, color, opacity, tex) => {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, color, transparent: true, opacity,
+        blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false
+      }));
+      s.scale.set(size, size, 1);
+      s.renderOrder = 3;
+      this.group.add(s);
+      return s;
+    };
+    this.coreSize = 13;
+    this.coreGlow = mk(this.coreSize, 0xffc477, 0.3, this.cloudTex);
+    mk(7, 0xfff0d0, 0.22, this.cloudTex);
+    this.coreFlare = mk(5.5, 0xffffff, 0.2, this.flareTex);
+  }
+
+  /* --------------------------------------------------------------
+   *  Marcadores de puntos de interés
+   * -------------------------------------------------------------- */
+  #buildMarkers() {
+    for (const poi of POIS) {
+      const mat = new THREE.SpriteMaterial({
+        map: this.flareTex,
+        color: new THREE.Color(poi.color),
+        transparent: true,
+        opacity: poi.explorable ? 0.95 : 0.6,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.position.set(poi.position.x, poi.position.y, poi.position.z);
+      sprite.scale.setScalar(poi.explorable ? 3.2 : 2.2);
+      sprite.renderOrder = 5;
+      sprite.userData.poi = poi;
+      this.group.add(sprite);
+      this.markers.push(sprite);
+    }
+  }
+
+  /* --------------------------------------------------------------
+   *  Animación
+   * -------------------------------------------------------------- */
+  update(dt, timeScale) {
+    this.time += dt;
+    for (const m of this.materials) m.uniforms.uTime.value = this.time;
+
+    // Rotación galáctica (un giro completo ≈ 225 Ma, aquí acelerado)
+    this.group.rotation.y -= dt * 0.0042 * (0.4 + timeScale * 0.05);
+
+    const pulse = 1 + Math.sin(this.time * 0.9) * 0.05;
+    this.coreGlow.scale.set(this.coreSize * pulse, this.coreSize * pulse, 1);
+    this.coreFlare.material.rotation += dt * 0.05;
+
+    for (const m of this.markers) {
+      const poi = m.userData.poi;
+      const base = poi.explorable ? 3.2 : 2.2;
+      const s = base * (1 + Math.sin(this.time * 2.2 + poi.position.x) * 0.09);
+      m.scale.setScalar(s);
+    }
+  }
+
+  /** Actualiza uPixelRatio tras un resize */
+  setPixelRatio(pr) {
+    const apply = obj => {
+      if (obj.material?.uniforms?.uPixelRatio) obj.material.uniforms.uPixelRatio.value = pr;
+    };
+    this.group.traverse(apply);
+  }
+
+  dispose() {
+    this.group.traverse(o => {
+      o.geometry?.dispose();
+      o.material?.dispose();
+    });
+  }
+}
+
+/* ========== solar.js ========== */
+const DEG = Math.PI / 180;
+
+/** Resuelve la ecuación de Kepler M = E - e·sen E */
+function eccentricAnomaly(M, e) {
+  let E = M;
+  for (let i = 0; i < 5; i++) {
+    E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+  }
+  return E;
+}
+
+class SolarSystem {
+  constructor() {
+    this.group = new THREE.Group();
+    this.orbitGroup = new THREE.Group();
+    this.group.add(this.orbitGroup);
+
+    this.rnd = makeRandom(4321);
+    this.bodies = [];      // objetos seleccionables / etiquetables
+    this.planets = [];
+    this.days = 0;
+
+    this.flareTex = flareSprite();
+    this.cloudTex = cloudSprite(256, 23);
+
+    this.#buildStarfield();
+    this.#buildSun();
+    this.#buildPlanets();
+    this.#buildBelt(ASTEROID_BELT, 0.055, '#8b7f70', 'belt');
+    this.#buildBelt(KUIPER_BELT, 0.09, '#6f7f96', 'kuiper');
+  }
+
+  /* ---------------- Fondo de estrellas lejanas ---------------- */
+  #buildStarfield() {
+    const rnd = this.rnd;
+    const N = 9000;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const c = new THREE.Color();
+    for (let i = 0; i < N; i++) {
+      const r = 1400 + rnd() * 300;
+      const u = rnd() * 2 - 1, phi = rnd() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      const i3 = i * 3;
+      pos[i3] = r * s * Math.cos(phi);
+      pos[i3 + 1] = r * u;
+      pos[i3 + 2] = r * s * Math.sin(phi);
+      c.setHSL(0.55 + rnd() * 0.12, 0.35, 0.55 + rnd() * 0.4);
+      col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const m = new THREE.PointsMaterial({
+      size: 1.6, sizeAttenuation: false, vertexColors: true,
+      map: starSprite(32), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const p = new THREE.Points(g, m);
+    p.frustumCulled = false;
+    this.group.add(p);
+
+    // Banda difusa de la Vía Láctea vista desde dentro
+    const band = new THREE.Mesh(
+      new THREE.SphereGeometry(1300, 48, 32),
+      new THREE.MeshBasicMaterial({
+        map: this.#milkyWayBand(), side: THREE.BackSide,
+        transparent: true, opacity: 0.2, depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    band.rotation.z = 62 * DEG;
+    this.group.add(band);
+  }
+
+  #milkyWayBand() {
+    const c = document.createElement('canvas');
+    c.width = 1024; c.height = 512;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 1024, 512);
+    const g = ctx.createLinearGradient(0, 130, 0, 382);
+    g.addColorStop(0.0, 'rgba(60,80,140,0)');
+    g.addColorStop(0.3, 'rgba(110,120,170,0.22)');
+    g.addColorStop(0.5, 'rgba(200,192,182,0.5)');
+    g.addColorStop(0.7, 'rgba(110,120,170,0.22)');
+    g.addColorStop(1.0, 'rgba(60,80,140,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 130, 1024, 252);
+    // núcleo galáctico
+    const cg = ctx.createRadialGradient(300, 256, 0, 300, 256, 190);
+    cg.addColorStop(0, 'rgba(255,225,180,0.55)');
+    cg.addColorStop(1, 'rgba(255,200,140,0)');
+    ctx.fillStyle = cg; ctx.fillRect(110, 66, 380, 380);
+    // carriles de polvo
+    ctx.globalCompositeOperation = 'destination-out';
+    const rnd = makeRandom(99);
+    for (let i = 0; i < 220; i++) {
+      const x = rnd() * 1024, y = 236 + gauss(rnd) * 26;
+      const w = 20 + rnd() * 120, h = 3 + rnd() * 14;
+      ctx.fillStyle = `rgba(0,0,0,${0.15 + rnd() * 0.4})`;
+      ctx.beginPath(); ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  /* ---------------- Sol ---------------- */
+  #buildSun() {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(SUN.visualR, 64, 48),
+      new THREE.MeshBasicMaterial({
+        map: planetTexture({
+          style: 'sun', seed: 5, width: 1024, height: 512,
+          palette: ['#d4560f', '#ff9a30', '#ffc45c', '#fff0b8', '#fffdf0']
+        })
+      })
+    );
+    mesh.userData.body = { data: SUN, kind: 'sun' };
+    this.group.add(mesh);
+    this.sunMesh = mesh;
+
+    const glow = (size, color, opacity, tex) => {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, color, transparent: true, opacity,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      s.scale.set(size, size, 1);
+      this.group.add(s);
+      return s;
+    };
+    this.corona = glow(SUN.visualR * 5.4, 0xff9a3c, 0.5, this.cloudTex);
+    glow(SUN.visualR * 3.1, 0xffc46a, 0.6, this.cloudTex);
+    this.sunFlare = glow(SUN.visualR * 5, 0xffd9a0, 0.22, this.flareTex);
+
+    const light = new THREE.PointLight(0xfff2dd, 2.6, 0, 0);
+    this.group.add(light);
+    this.group.add(new THREE.AmbientLight(0x2a3550, 0.35));
+
+    this.bodies.push({ obj: mesh, data: SUN, kind: 'sun' });
+  }
+
+  /* ---------------- Planetas ---------------- */
+  #buildPlanets() {
+    const rnd = this.rnd;
+
+    for (const p of PLANETS) {
+      // Plano orbital: inclinación + nodo ascendente
+      const plane = new THREE.Group();
+      plane.rotation.y = rnd() * Math.PI * 2;
+      plane.rotation.x = p.inc * DEG;
+      this.group.add(plane);
+
+      // --- trazado de la órbita ---
+      const pts = [];
+      const b = p.visualD * Math.sqrt(1 - p.ecc * p.ecc);
+      for (let i = 0; i <= 256; i++) {
+        const E = (i / 256) * Math.PI * 2;
+        pts.push(new THREE.Vector3(
+          p.visualD * (Math.cos(E) - p.ecc), 0, b * Math.sin(E)
+        ));
+      }
+      const orbit = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({
+          color: new THREE.Color(p.color), transparent: true, opacity: 0.22
+        })
+      );
+      const orbitHolder = new THREE.Group();
+      orbitHolder.rotation.copy(plane.rotation);
+      orbitHolder.add(orbit);
+      this.orbitGroup.add(orbitHolder);
+
+      // --- cuerpo ---
+      const holder = new THREE.Group();     // posición orbital
+      plane.add(holder);
+
+      const spin = new THREE.Group();       // eje + rotación propia
+      spin.rotation.z = p.tilt * DEG;
+      holder.add(spin);
+
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(p.visualR, 64, 48),
+        new THREE.MeshStandardMaterial({
+          map: planetTexture({
+            style: p.style, seed: p.radiusKm, palette: p.palette,
+            bands: p.bands || 10, craters: p.craters || 0,
+            storm: p.storm || null, polar: p.polar || 0
+          }),
+          roughness: p.style === 'gas' || p.style === 'ice' ? 0.95 : 1.0,
+          metalness: 0.0
+        })
+      );
+      mesh.userData.body = { data: p, kind: 'planet' };
+      spin.add(mesh);
+
+      // Atmósfera (halo de dispersión)
+      if (p.atmosphere) {
+        const atm = new THREE.Mesh(
+          new THREE.SphereGeometry(p.visualR * 1.045, 48, 32),
+          new THREE.MeshBasicMaterial({
+            color: new THREE.Color(p.atmosphere), transparent: true,
+            opacity: 0.18, side: THREE.BackSide, blending: THREE.AdditiveBlending,
+            depthWrite: false
+          })
+        );
+        spin.add(atm);
+      }
+
+      // Anillos
+      if (p.rings) {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(p.visualR * p.rings.inner, p.visualR * p.rings.outer, 160, 1),
+          new THREE.MeshBasicMaterial({
+            map: ringTexture(p.radiusKm), side: THREE.DoubleSide,
+            transparent: true, opacity: p.rings.faint ? 0.28 : 0.85,
+            depthWrite: false
+          })
+        );
+        // Reorienta las UV para que la textura sea radial
+        const g = ring.geometry;
+        const pos = g.attributes.position;
+        const uv = g.attributes.uv;
+        const v = new THREE.Vector3();
+        const rIn = p.visualR * p.rings.inner, rOut = p.visualR * p.rings.outer;
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i);
+          uv.setXY(i, (v.length() - rIn) / (rOut - rIn), 0.5);
+        }
+        ring.rotation.x = Math.PI / 2;
+        spin.add(ring);
+      }
+
+      // Lunas
+      const moons = [];
+      for (const m of p.moons) {
+        const mPlane = new THREE.Group();
+        mPlane.rotation.y = rnd() * Math.PI * 2;
+        mPlane.rotation.x = (rnd() * 14 - 7) * DEG;
+        holder.add(mPlane);
+
+        const mMesh = new THREE.Mesh(
+          new THREE.SphereGeometry(m.visualR, 24, 18),
+          new THREE.MeshStandardMaterial({
+            map: planetTexture({
+              style: 'rocky', seed: m.radiusKm * 7, width: 256, height: 128,
+              palette: [
+                new THREE.Color(m.color).multiplyScalar(0.45).getStyle(),
+                m.color,
+                new THREE.Color(m.color).lerp(new THREE.Color('#ffffff'), 0.3).getStyle()
+              ],
+              craters: m.craters || 0
+            }),
+            roughness: 1
+          })
+        );
+        mMesh.userData.body = { data: m, kind: 'moon', parent: p };
+        mPlane.add(mMesh);
+
+        const mOrbit = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(
+            Array.from({ length: 97 }, (_, i) => {
+              const a = (i / 96) * Math.PI * 2;
+              return new THREE.Vector3(Math.cos(a) * m.visualD, 0, Math.sin(a) * m.visualD);
+            })
+          ),
+          new THREE.LineBasicMaterial({ color: 0x8899aa, transparent: true, opacity: 0.16 })
+        );
+        mPlane.add(mOrbit);
+        this.moonOrbits = this.moonOrbits || [];
+        this.moonOrbits.push(mOrbit);
+
+        moons.push({ data: m, mesh: mMesh, phase: rnd() * Math.PI * 2 });
+        this.bodies.push({ obj: mMesh, data: m, kind: 'moon', parent: p });
+      }
+
+      const entry = {
+        data: p, plane, holder, spin, mesh, moons,
+        phase: rnd() * Math.PI * 2, b
+      };
+      this.planets.push(entry);
+      this.bodies.push({ obj: mesh, data: p, kind: 'planet', entry });
+    }
+  }
+
+  /* ---------------- Cinturones ---------------- */
+  #buildBelt(belt, thickness, hex, name) {
+    const rnd = this.rnd;
+    const N = belt.count;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const c = new THREE.Color();
+    const base = new THREE.Color(hex);
+
+    for (let i = 0; i < N; i++) {
+      const t = Math.pow(rnd(), 0.7);
+      const r = belt.inner + (belt.outer - belt.inner) * t;
+      const a = rnd() * Math.PI * 2;
+      const i3 = i * 3;
+      pos[i3] = Math.cos(a) * r;
+      pos[i3 + 1] = gauss(rnd) * thickness * r * 0.35;
+      pos[i3 + 2] = Math.sin(a) * r;
+      c.copy(base).multiplyScalar(0.55 + rnd() * 0.8);
+      col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({
+      size: name === 'belt' ? 0.36 : 0.5,
+      vertexColors: true, transparent: true, opacity: 0.85,
+      map: starSprite(32), depthWrite: false, blending: THREE.AdditiveBlending
+    }));
+    p.frustumCulled = false;
+    p.name = name;
+    this.group.add(p);
+    this[name] = p;
+  }
+
+  /* ---------------- Animación ---------------- */
+  update(dt, daysPerSecond) {
+    this.days += dt * daysPerSecond;
+
+    this.sunMesh.rotation.y += dt * 0.02;
+    const pulse = 1 + Math.sin(this.days * 0.05) * 0.03;
+    this.corona.scale.set(SUN.visualR * 5.4 * pulse, SUN.visualR * 5.4 * pulse, 1);
+    this.sunFlare.material.rotation += dt * 0.03;
+
+    for (const pl of this.planets) {
+      const p = pl.data;
+      const M = pl.phase + (this.days / p.periodDays) * Math.PI * 2;
+      const E = eccentricAnomaly(M % (Math.PI * 2), p.ecc);
+      pl.holder.position.set(
+        p.visualD * (Math.cos(E) - p.ecc), 0, pl.b * Math.sin(E)
+      );
+      pl.spin.rotation.y = (this.days / p.rotationDays) * Math.PI * 2;
+
+      for (const mo of pl.moons) {
+        const a = mo.phase + (this.days / mo.data.periodDays) * Math.PI * 2;
+        mo.mesh.position.set(
+          Math.cos(a) * mo.data.visualD, 0, Math.sin(a) * mo.data.visualD
+        );
+        mo.mesh.rotation.y = a;   // acoplamiento de marea
+      }
+    }
+
+    if (this.belt) this.belt.rotation.y += dt * daysPerSecond * 0.00016;
+    if (this.kuiper) this.kuiper.rotation.y += dt * daysPerSecond * 0.00002;
+  }
+
+  setOrbitsVisible(v) {
+    this.orbitGroup.visible = v;
+    for (const o of this.moonOrbits || []) o.visible = v;
+  }
+
+  /** Meshes candidatos para el raycaster */
+  get pickables() {
+    return this.bodies.map(b => b.obj);
+  }
+
+  dispose() {
+    this.group.traverse(o => {
+      o.geometry?.dispose();
+      if (o.material) {
+        o.material.map?.dispose();
+        o.material.dispose();
+      }
+    });
+  }
+}
+
+/* ========== blackhole.js ========== */
+/* ==================================================================
+ *  Sagitario A*
+ *  Trazado de geodésicas en una métrica de Schwarzschild.
+ *  Unidades: radio de Schwarzschild = 1 (M = 0.5, c = 1).
+ * ================================================================== */
+
+const VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+  }
+`;
+
+const FRAG = /* glsl */`
+  precision highp float;
+
+  varying vec2 vUv;
+
+  uniform vec3      uCamPos;
+  uniform mat4      uCamWorld;
+  uniform float     uTanHalfFov;
+  uniform float     uAspect;
+  uniform float     uTime;
+  uniform float     uDiskIn;
+  uniform float     uDiskOut;
+  uniform sampler2D uSky;
+
+  #define PI 3.14159265359
+  #define STEPS 320
+  #define HORIZON 1.0
+
+  /* ---------- ruido ---------- */
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i), b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  float fbm(vec2 p) {
+    float s = 0.0, a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      s += a * vnoise(p);
+      p *= 2.03;
+      a *= 0.5;
+    }
+    return s;
+  }
+
+  /* ---------- fondo estelar ---------- */
+  float hash13(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+  }
+
+  // Estrellas procedurales: se mantienen puntuales por muy magnificadas
+  // que las deje la lente gravitacional
+  vec3 starField(vec3 d) {
+    vec3 col = vec3(0.0);
+    float k = 90.0;
+    for (int L = 0; L < 3; L++) {
+      vec3 p = d * k;
+      vec3 ip = floor(p);
+      vec3 fp = fract(p) - 0.5;
+      float h = hash13(ip);
+      if (h > 0.90) {
+        vec3 off = vec3(hash13(ip + 1.7), hash13(ip + 5.3), hash13(ip + 9.1)) - 0.5;
+        float dist = length(fp - off * 0.72);
+        float lum = pow(fract(h * 91.7), 3.2);
+        float b = smoothstep(0.16, 0.0, dist) * (0.15 + lum);
+        vec3 tint = mix(vec3(0.72, 0.82, 1.05), vec3(1.05, 0.88, 0.70), fract(h * 57.3));
+        col += tint * b * 1.5;
+      }
+      k *= 2.35;
+    }
+    return col;
+  }
+
+  vec3 sky(vec3 d) {
+    vec2 uv = vec2(atan(d.z, d.x) / (2.0 * PI) + 0.5,
+                   acos(clamp(d.y, -1.0, 1.0)) / PI);
+    return texture2D(uSky, uv).rgb + starField(d);
+  }
+
+  /* ---------- disco de acreción ---------- */
+  vec4 disk(vec3 p, vec3 rd) {
+    float r = length(p.xz);
+    float t = (r - uDiskIn) / (uDiskOut - uDiskIn);
+    if (t < 0.0 || t > 1.0) return vec4(0.0);
+
+    float phi = atan(p.z, p.x);
+    // rotación kepleriana: el gas interior gira mucho más rápido
+    float omega = 5.5 / pow(r, 1.5);
+    float a = phi + omega * uTime;
+
+    // el brazo espiral se enrolla con el radio
+    vec2 q = vec2(a * 1.6 + log(r) * 2.4, log(r) * 3.4);
+    float n1 = fbm(q * vec2(1.0, 1.0));
+    float n2 = fbm(q * vec2(3.4, 2.2) + 11.0);
+    float filaments = mix(n1, n2, 0.45);
+
+    float dens = pow(1.0 - t, 1.35) * (0.30 + 1.25 * filaments);
+    dens *= smoothstep(0.0, 0.10, t) * smoothstep(1.0, 0.68, t);
+
+    // temperatura del disco delgado: T ~ r^-3/4
+    float T = pow(uDiskIn / r, 0.75);
+    vec3 col = mix(vec3(1.00, 0.30, 0.06), vec3(1.00, 0.72, 0.30), smoothstep(0.20, 0.62, T));
+    col = mix(col, vec3(1.00, 0.95, 0.78), smoothstep(0.62, 0.88, T));
+    col = mix(col, vec3(0.78, 0.90, 1.30), smoothstep(0.88, 1.00, T));
+
+    // beaming relativista: el lado que se acerca se vuelve mucho más brillante
+    float beta = 0.72 / sqrt(r);
+    vec3 vel = normalize(cross(vec3(0.0, 1.0, 0.0), p)) * beta;
+    float doppler = 1.0 / max(1.0 - dot(vel, -rd), 0.16);
+    col *= min(pow(doppler, 3.0), 7.0);
+
+    // corrimiento al rojo gravitacional
+    float g = sqrt(max(1.0 - HORIZON / r, 0.02));
+    col *= g;
+    col = mix(col * vec3(1.25, 0.72, 0.45), col, g);
+
+    return vec4(col * dens * 0.88, clamp(dens * 1.15, 0.0, 1.0));
+  }
+
+  void main() {
+    vec2 ndc = vUv * 2.0 - 1.0;
+    vec3 rd = normalize(vec3(ndc.x * uAspect * uTanHalfFov, ndc.y * uTanHalfFov, -1.0));
+    rd = normalize((uCamWorld * vec4(rd, 0.0)).xyz);
+
+    vec3 pos = uCamPos;
+    vec3 dir = rd;
+
+    // momento angular específico del fotón: constante del movimiento
+    float h2 = dot(cross(pos, dir), cross(pos, dir));
+
+    vec3  color = vec3(0.0);
+    float trans = 1.0;
+    bool  captured = false;
+
+    for (int i = 0; i < STEPS; i++) {
+      float r2 = dot(pos, pos);
+      float r = sqrt(r2);
+
+      if (r < HORIZON) { captured = true; break; }
+      if (r > 260.0 && dot(pos, dir) > 0.0) break;
+      if (trans < 0.01) break;
+
+      float dt = clamp(0.055 * r, 0.012, 2.2);
+
+      // deflexión de Schwarzschild sobre el fotón
+      vec3 acc = -1.5 * h2 * pos / (r2 * r2 * r);
+      vec3 npos = pos + dir * dt + 0.5 * acc * dt * dt;
+      vec3 ndir = normalize(dir + acc * dt);
+
+      // cruce del plano ecuatorial: aquí vive el disco
+      if (pos.y * npos.y < 0.0) {
+        float f = pos.y / (pos.y - npos.y);
+        vec3 hit = mix(pos, npos, f);
+        vec4 d = disk(hit, normalize(mix(dir, ndir, f)));
+        color += d.rgb * trans;
+        trans *= 1.0 - d.a * 0.82;
+      }
+
+      pos = npos;
+      dir = ndir;
+    }
+
+    if (!captured) color += sky(dir) * trans;
+
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+class BlackHole {
+  constructor() {
+    this.group = new THREE.Group();
+    this.time = 0;
+
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        uCamPos: { value: new THREE.Vector3() },
+        uCamWorld: { value: new THREE.Matrix4() },
+        uTanHalfFov: { value: 0.5 },
+        uAspect: { value: 1 },
+        uTime: { value: 0 },
+        uDiskIn: { value: 3.0 },
+        uDiskOut: { value: 15.0 },
+        uSky: { value: this.#skyTexture() }
+      },
+      vertexShader: VERT,
+      fragmentShader: FRAG,
+      depthTest: false,
+      depthWrite: false
+    });
+
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
+    quad.frustumCulled = false;
+    quad.renderOrder = -10;
+    this.group.add(quad);
+
+    // Anclas invisibles para las etiquetas del HUD
+    this.anchors = {};
+    for (const [id, p] of Object.entries({
+      horizon: [0, 0, 0],
+      photon: [0, 2.0, 0],
+      disk: [12.5, 0, 0]
+    })) {
+      const a = new THREE.Object3D();
+      a.position.fromArray(p);
+      this.group.add(a);
+      this.anchors[id] = a;
+    }
+  }
+
+  /* Cielo equirectangular: solo la nebulosidad difusa de fondo.
+     Las estrellas puntuales las genera el shader para no pixelarse. */
+  #skyTexture() {
+    const w = 2048, h = 1024;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    const rnd = makeRandom(777);
+
+    ctx.fillStyle = '#01020a';
+    ctx.fillRect(0, 0, w, h);
+
+    // Banda de la Vía Láctea, inclinada sobre el ecuador
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-0.32);
+    ctx.translate(-w / 2, -h / 2);
+    const band = ctx.createLinearGradient(0, h * 0.36, 0, h * 0.64);
+    band.addColorStop(0.0, 'rgba(30,44,92,0)');
+    band.addColorStop(0.35, 'rgba(74,86,140,0.30)');
+    band.addColorStop(0.5, 'rgba(186,178,168,0.42)');
+    band.addColorStop(0.65, 'rgba(74,86,140,0.30)');
+    band.addColorStop(1.0, 'rgba(30,44,92,0)');
+    ctx.fillStyle = band;
+    ctx.fillRect(0, h * 0.36, w, h * 0.28);
+
+    const core = ctx.createRadialGradient(w * 0.34, h * 0.5, 0, w * 0.34, h * 0.5, h * 0.34);
+    core.addColorStop(0.0, 'rgba(255,222,170,0.5)');
+    core.addColorStop(1.0, 'rgba(255,190,130,0)');
+    ctx.fillStyle = core;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 420; i++) {
+      const x = rnd() * w;
+      const y = h * 0.5 + gauss(rnd) * h * 0.05;
+      ctx.fillStyle = `rgba(0,0,0,${0.2 + rnd() * 0.5})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 24 + rnd() * 150, 3 + rnd() * 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
+
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = THREE.RepeatWrapping;
+    return t;
+  }
+
+  update(dt, camera, timeScale) {
+    this.time += dt * (0.25 + timeScale * 0.035);
+    const u = this.material.uniforms;
+    u.uTime.value = this.time;
+    u.uCamPos.value.copy(camera.position);
+    u.uCamWorld.value.copy(camera.matrixWorld);
+    u.uTanHalfFov.value = Math.tan((camera.fov * Math.PI) / 360);
+    u.uAspect.value = camera.aspect;
+  }
+
+  dispose() {
+    this.material.uniforms.uSky.value.dispose();
+    this.material.dispose();
+    this.group.traverse(o => o.geometry?.dispose());
+  }
+}
+
+/* ========== ui.js ========== */
+const $ = id => document.getElementById(id);
+
+class UI {
+  constructor() {
+    this.el = {
+      labels: $('labels'), panel: $('panel'), panelTag: $('panel-tag'),
+      panelTitle: $('panel-title'), panelSub: $('panel-sub'), panelBody: $('panel-body'),
+      panelAction: $('panel-action'), panelClose: $('panel-close'),
+      dock: $('dock-items'), back: $('btn-back'), fade: $('fade'),
+      loader: $('loader'), hint: $('hint'), reticle: $('reticle'),
+      context: $('hud-context'), statScale: $('stat-scale'),
+      statTarget: $('stat-target'), statDistance: $('stat-distance'),
+      orbitsBtn: document.querySelector('[data-action="orbits"]'),
+      labelsBtn: document.querySelector('[data-action="labels"]'),
+      speed: $('speed'), speedValue: $('speed-value')
+    };
+    this.labels = [];
+    this.showLabels = true;
+    this._v = new THREE.Vector3();
+
+    this.el.panelClose.onclick = () => this.hidePanel();
+  }
+
+  /* ---------------- Panel ---------------- */
+  showPanel(info, onAction) {
+    const e = this.el;
+    e.panelTag.textContent = info.tag || 'OBJETO';
+    e.panelTitle.textContent = info.name;
+    e.panelSub.textContent = info.sub || '';
+
+    let html = '';
+    if (info.desc) html += `<p class="desc">${info.desc}</p>`;
+    if (info.facts?.length) {
+      html += '<div class="facts">' + info.facts
+        .map(([k, v]) => `<div class="fact"><label>${k}</label><span>${v}</span></div>`)
+        .join('') + '</div>';
+    }
+    if (info.moons?.length) {
+      html += '<div class="moons"><h3>Satélites principales</h3>' + info.moons
+        .map(m => `<div class="moon-row"><b>${m.name}</b><span>${m.note || (m.radiusKm + ' km')}</span></div>`)
+        .join('') + '</div>';
+    }
+    e.panelBody.innerHTML = html;
+
+    if (onAction) {
+      e.panelAction.classList.remove('hidden');
+      e.panelAction.textContent = info.actionLabel || 'Explorar';
+      e.panelAction.onclick = onAction;
+    } else {
+      e.panelAction.classList.add('hidden');
+      e.panelAction.onclick = null;
+    }
+    e.panel.classList.remove('hidden');
+  }
+
+  hidePanel() { this.el.panel.classList.add('hidden'); }
+
+  /* ---------------- Dock ---------------- */
+  buildDock(items, onSelect) {
+    this.el.dock.innerHTML = '';
+    this.dockItems = new Map();
+    for (const it of items) {
+      const b = document.createElement('button');
+      b.className = 'dock-item' + (it.locked ? ' locked' : it.unlocked ? ' unlocked' : '');
+      b.innerHTML = `<i></i>${it.name}`;
+      if (!it.locked) b.onclick = () => onSelect(it);
+      this.el.dock.appendChild(b);
+      this.dockItems.set(it.id, b);
+    }
+  }
+
+  setDockCurrent(id) {
+    if (!this.dockItems) return;
+    for (const [key, el] of this.dockItems) el.classList.toggle('current', key === id);
+  }
+
+  /* ---------------- Etiquetas 3D ---------------- */
+  clearLabels() {
+    this.el.labels.innerHTML = '';
+    this.labels = [];
+  }
+
+  addLabel(object3D, text, cls, opts = {}) {
+    const div = document.createElement('div');
+    div.className = 'label ' + cls;
+    div.innerHTML = `<span class="dot">${opts.pulse ? '<span class="ring"></span>' : ''}</span>${text}`;
+    if (opts.onClick) div.onclick = e => { e.stopPropagation(); opts.onClick(); };
+    this.el.labels.appendChild(div);
+    const entry = { object3D, div, minDist: opts.minDist ?? 0, maxDist: opts.maxDist ?? Infinity, offset: opts.offset ?? 0 };
+    this.labels.push(entry);
+    return entry;
+  }
+
+  updateLabels(camera, width, height) {
+    if (!this.showLabels) return;
+    const v = this._v;
+    for (const l of this.labels) {
+      l.object3D.getWorldPosition(v);
+      const dist = camera.position.distanceTo(v);
+      v.project(camera);
+      const visible = v.z < 1 && dist > l.minDist && dist < l.maxDist;
+      if (!visible) { l.div.style.display = 'none'; continue; }
+      l.div.style.display = '';
+      l.div.style.left = ((v.x * 0.5 + 0.5) * width) + 'px';
+      l.div.style.top = ((-v.y * 0.5 + 0.5) * height - l.offset) + 'px';
+      l.div.style.opacity = Math.min(1, Math.max(0.25, 1 - dist / (l.maxDist * 0.95)));
+    }
+  }
+
+  setLabelsVisible(v) {
+    this.showLabels = v;
+    this.el.labels.style.display = v ? '' : 'none';
+    this.el.labelsBtn.classList.toggle('active', v);
+  }
+
+  /* ---------------- Varios ---------------- */
+  setContext(text) { this.el.context.textContent = text; }
+  setScale(text) { this.el.statScale.textContent = text; }
+  setTarget(text) { this.el.statTarget.textContent = text || '—'; }
+  setDistance(text) { this.el.statDistance.textContent = text || '—'; }
+
+  setReticle(x, y, on) {
+    this.el.reticle.classList.toggle('on', on);
+    if (on) { this.el.reticle.style.left = x + 'px'; this.el.reticle.style.top = y + 'px'; }
+  }
+
+  fade(on) { this.el.fade.classList.toggle('on', on); }
+  hideLoader() { this.el.loader.classList.add('done'); }
+  hideHint() { this.el.hint.classList.add('hide'); }
+
+  setMode(mode) {
+    this.el.back.classList.toggle('hidden', mode === 'galaxy');
+    this.el.orbitsBtn.classList.toggle('hidden', mode !== 'solar');
+  }
+}
+
+/* ========== main.js ========== */
+/* ================================================================
+ *  Renderer
+ * ================================================================ */
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.05, 6000);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = 0.55;
+controls.zoomSpeed = 0.9;
+controls.panSpeed = 0.6;
+
+const ui = new UI();
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+let galaxy = null;
+let solar = null;
+let blackhole = null;
+let scene = null;
+let composer, bloom, renderPass;
+
+const state = {
+  mode: 'galaxy',
+  daysPerSecond: 20,
+  flight: null,
+  selected: null,
+  followBody: null,
+  transitioning: false
+};
+
+/* ================================================================
+ *  Escenas
+ * ================================================================ */
+const galaxyScene = new THREE.Scene();
+const solarScene = new THREE.Scene();
+const bhScene = new THREE.Scene();
+
+function boot() {
+  galaxy = new Galaxy();
+  galaxyScene.add(galaxy.group);
+  galaxyScene.fog = null;
+
+  solar = new SolarSystem();
+  solarScene.add(solar.group);
+
+  blackhole = new BlackHole();
+  bhScene.add(blackhole.group);
+
+  scene = galaxyScene;
+
+  renderPass = new RenderPass(scene, camera);
+  bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.7, 0.26);
+  composer = new EffectComposer(renderer);
+  composer.addPass(renderPass);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
+  setupGalaxyMode(true);
+  buildDock();
+  ui.el.speedValue.textContent = state.daysPerSecond + ' d/s';
+
+  ui.hideLoader();
+  setTimeout(() => ui.hideHint(), 7000);
+  window.__gs = { galaxy, solar, blackhole, state, camera, controls, renderer, bloom };
+  animate();
+}
+
+/* ================================================================
+ *  Modo galaxia
+ * ================================================================ */
+function setupGalaxyMode(initial = false) {
+  state.mode = 'galaxy';
+  scene = galaxyScene;
+  renderPass.scene = galaxyScene;
+  bloom.strength = 0.72;
+  bloom.threshold = 0.3;
+  bloom.radius = 0.65;
+  setResolutionScale(1);
+
+  controls.minDistance = 6;
+  controls.maxDistance = 400;
+  controls.target.set(0, 0, 0);
+  controls.enablePan = false;
+
+  if (initial) {
+    camera.position.set(0, 92, 128);
+  }
+
+  ui.setMode('galaxy');
+  ui.setContext('Vía Láctea · Galaxia espiral barrada SBbc');
+  ui.setScale('100 000 ly');
+  ui.setLabelsVisible(ui.showLabels);
+  ui.clearLabels();
+  ui.setDockCurrent(null);
+  ui.setTarget(null);
+  state.followBody = null;
+
+  for (const m of galaxy.markers) {
+    const poi = m.userData.poi;
+    ui.addLabel(m, poi.name, poi.explorable ? 'poi' : 'locked', {
+      pulse: poi.explorable,
+      offset: 0,
+      onClick: () => selectPOI(poi)
+    });
+  }
+}
+
+/** Posición en coordenadas de mundo del marcador de un POI (la galaxia rota) */
+function poiWorldPosition(poi) {
+  const marker = galaxy.markers.find(m => m.userData.poi === poi);
+  return marker.getWorldPosition(new THREE.Vector3());
+}
+
+function selectPOI(poi) {
+  state.selected = poi;
+  ui.setTarget(poi.name);
+  ui.showPanel({
+    tag: poi.tag,
+    name: poi.name,
+    sub: poi.sub,
+    desc: poi.desc + (poi.explorable ? '' : ' · Exploración detallada no disponible todavía.'),
+    facts: poi.facts,
+    actionLabel: poi.actionLabel || 'Explorar sistema'
+  }, poi.explorable ? () => enterDestination(poi) : null);
+
+  flyTo(poiWorldPosition(poi), poi.explorable ? 11 : 16, 1.5);
+}
+
+/* ================================================================
+ *  Modo sistema solar
+ * ================================================================ */
+function setupSolarMode() {
+  state.mode = 'solar';
+  scene = solarScene;
+  renderPass.scene = solarScene;
+  bloom.strength = 0.85;
+  bloom.threshold = 0.62;
+  bloom.radius = 0.6;
+  setResolutionScale(1);
+
+  controls.minDistance = 1.2;
+  controls.maxDistance = 900;
+  controls.target.set(0, 0, 0);
+  controls.enablePan = true;
+
+  ui.setMode('solar');
+  ui.setContext('Sistema Solar · Brazo de Orión · 26 000 ly del centro');
+  ui.setScale('~ 60 UA');
+  ui.clearLabels();
+  ui.setTarget('Sol');
+
+  ui.addLabel(solar.sunMesh, 'Sol', 'planet active', {
+    onClick: () => selectBody(solar.bodies[0])
+  });
+  for (const b of solar.bodies) {
+    if (b.kind === 'planet') {
+      ui.addLabel(b.obj, b.data.name, 'planet', {
+        maxDist: 900,
+        onClick: () => selectBody(b)
+      });
+    } else if (b.kind === 'moon') {
+      ui.addLabel(b.obj, b.data.name, 'moon', {
+        maxDist: 90,
+        onClick: () => selectBody(b)
+      });
+    }
+  }
+  ui.setLabelsVisible(ui.showLabels);
+}
+
+function selectBody(b) {
+  state.selected = b;
+  ui.setTarget(b.data.name);
+
+  if (b.kind === 'sun') {
+    ui.showPanel({ tag: SUN.tag, name: SUN.name, sub: 'Centro del sistema · 1 UA de la Tierra', desc: SUN.desc, facts: SUN.facts });
+  } else if (b.kind === 'planet') {
+    ui.showPanel({
+      tag: b.data.tag, name: b.data.name,
+      sub: `${b.data.au} UA del Sol · ${b.data.moons.length} satélite(s) representado(s)`,
+      desc: b.data.desc, facts: b.data.facts, moons: b.data.moons
+    });
+  } else {
+    ui.showPanel({
+      tag: 'SATÉLITE NATURAL', name: b.data.name,
+      sub: `Luna de ${b.parent.name}`,
+      desc: b.data.note ? `${b.data.note}. Radio de ${b.data.radiusKm} km; completa una órbita cada ${Math.abs(b.data.periodDays)} días.` : '',
+      facts: [['Radio', b.data.radiusKm + ' km'], ['Periodo', Math.abs(b.data.periodDays) + ' d']]
+    });
+  }
+
+  const target = new THREE.Vector3();
+  b.obj.getWorldPosition(target);
+  const r = b.data.visualR || 1;
+  flyTo(target, Math.max(2.2, r * 4.2), 1.4, b);
+}
+
+/* ================================================================
+ *  Modo agujero negro
+ * ================================================================ */
+function setupBlackHoleMode() {
+  state.mode = 'blackhole';
+  scene = bhScene;
+  renderPass.scene = bhScene;
+  bloom.strength = 0.55;
+  bloom.threshold = 0.75;
+  bloom.radius = 0.5;
+  // el trazado de geodésicas es caro: se renderiza a menor resolución
+  setResolutionScale(0.72);
+
+  controls.minDistance = 5;
+  controls.maxDistance = 120;
+  controls.target.set(0, 0, 0);
+  controls.enablePan = false;
+
+  ui.setMode('blackhole');
+  ui.setContext('Sagitario A* · Centro galáctico · 4.3 millones de masas solares');
+  ui.setScale('~ 60 r_s');
+  ui.clearLabels();
+  ui.setTarget('Sagitario A*');
+
+  const a = blackhole.anchors;
+  ui.addLabel(a.horizon, 'Horizonte de sucesos', 'poi', { pulse: true });
+  ui.addLabel(a.photon, 'Esfera de fotones', 'moon');
+  ui.addLabel(a.disk, 'Disco de acreción', 'planet');
+  ui.setLabelsVisible(ui.showLabels);
+}
+
+/* ================================================================
+ *  Transiciones entre escenas
+ * ================================================================ */
+const DESTINATIONS = {
+  solar: {
+    setup: setupSolarMode,
+    enter: { pos: [0, 34, 96], fly: { dist: 118, dur: 2.2 } },
+    back: { dist: 190, dir: [0, 120, 150] }
+  },
+  blackhole: {
+    setup: setupBlackHoleMode,
+    enter: { pos: [0, 4.5, 22], fly: { dist: 46, dur: 2.6 } },
+    back: { dist: 190, dir: [0, 120, 150] }
+  }
+};
+
+function destinationKey(poi) {
+  return poi.id === 'sgra' ? 'blackhole' : poi.id;
+}
+
+function enterDestination(poi) {
+  const key = destinationKey(poi);
+  const dest = DESTINATIONS[key];
+  if (!dest || state.transitioning) return;
+
+  state.transitioning = true;
+  state.destination = poi;
+  ui.hidePanel();
+
+  flyTo(poiWorldPosition(poi), 2.2, 1.5, null, () => {
+    ui.fade(true);
+    setTimeout(() => {
+      dest.setup();
+      camera.position.fromArray(dest.enter.pos);
+      controls.target.set(0, 0, 0);
+      controls.update();
+      ui.fade(false);
+      state.transitioning = false;
+      flyTo(new THREE.Vector3(0, 0, 0), dest.enter.fly.dist, dest.enter.fly.dur);
+    }, 600);
+  });
+}
+
+function exitToGalaxy() {
+  if (state.transitioning) return;
+  const poi = state.destination || POIS.find(p => p.id === 'solar');
+  const dest = DESTINATIONS[destinationKey(poi)];
+
+  state.transitioning = true;
+  ui.hidePanel();
+  ui.fade(true);
+  setTimeout(() => {
+    setupGalaxyMode();
+    const p = poiWorldPosition(poi);
+    camera.position.set(p.x * 1.06 || 6, p.y + 3, p.z * 1.06 || 6);
+    controls.target.copy(p);
+    controls.update();
+    ui.fade(false);
+    state.transitioning = false;
+    flyTo(new THREE.Vector3(0, 0, 0), dest.back.dist, 2.6, null, null,
+      new THREE.Vector3().fromArray(dest.back.dir));
+  }, 600);
+}
+
+/** Baja la resolución interna del composer sin tocar el tamaño del canvas */
+function setResolutionScale(scale) {
+  const pr = Math.min(devicePixelRatio, 2) * scale;
+  composer.setPixelRatio(pr);
+  composer.setSize(innerWidth, innerHeight);
+}
+
+/* ================================================================
+ *  Vuelo de cámara
+ * ================================================================ */
+function flyTo(targetPoint, distance, duration = 1.4, follow = null, onDone = null, dirHint = null) {
+  const dir = dirHint
+    ? dirHint.clone().normalize()
+    : camera.position.clone().sub(targetPoint).normalize();
+  if (!isFinite(dir.x) || dir.lengthSq() < 1e-6) dir.set(0.4, 0.5, 0.8).normalize();
+
+  state.flight = {
+    t: 0, duration, dir, distance,
+    fromPos: camera.position.clone(),
+    fromTarget: controls.target.clone(),
+    toTarget: targetPoint.clone(),
+    follow, onDone
+  };
+  state.followBody = null;
+  controls.enabled = false;
+}
+
+const _toPos = new THREE.Vector3();
+
+function updateFlight(dt) {
+  const f = state.flight;
+  if (!f) return;
+  f.t += dt;
+  const k = easeInOut(clamp(f.t / f.duration, 0, 1));
+
+  // Si seguimos un cuerpo en órbita, el destino se recalcula cada fotograma
+  if (f.follow) f.follow.obj.getWorldPosition(f.toTarget);
+
+  _toPos.copy(f.toTarget).addScaledVector(f.dir, f.distance);
+  camera.position.lerpVectors(f.fromPos, _toPos, k);
+  controls.target.lerpVectors(f.fromTarget, f.toTarget, k);
+
+  if (f.t >= f.duration) {
+    state.flight = null;
+    controls.enabled = true;
+    state.followBody = f.follow;
+    f.onDone?.();
+  }
+}
+
+/* Mantiene el encuadre sobre un cuerpo en movimiento */
+const _fw = new THREE.Vector3();
+const _prev = new THREE.Vector3();
+function updateFollow() {
+  if (!state.followBody || state.flight) return;
+  const b = state.followBody;
+  _prev.copy(controls.target);
+  b.obj.getWorldPosition(_fw);
+  const delta = _fw.clone().sub(_prev);
+  controls.target.copy(_fw);
+  camera.position.add(delta);
+}
+
+/* ================================================================
+ *  Interacción
+ * ================================================================ */
+let downPos = null;
+
+canvas.addEventListener('pointerdown', e => { downPos = { x: e.clientX, y: e.clientY }; });
+
+function pickList() {
+  if (state.mode === 'galaxy') return galaxy.markers;
+  if (state.mode === 'solar') return solar.pickables;
+  return [];
+}
+
+canvas.addEventListener('pointerup', e => {
+  if (!downPos) return;
+  const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+  downPos = null;
+  if (moved > 6 || state.transitioning) return;
+
+  pointer.x = (e.clientX / innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+
+  const hit = raycaster.intersectObjects(pickList(), false)[0];
+  if (!hit) return;
+
+  if (state.mode === 'galaxy') {
+    selectPOI(hit.object.userData.poi);
+  } else if (state.mode === 'solar') {
+    const b = solar.bodies.find(x => x.obj === hit.object);
+    if (b) selectBody(b);
+  }
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (state.transitioning) { ui.setReticle(0, 0, false); return; }
+  pointer.x = (e.clientX / innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(pickList(), false)[0];
+  ui.setReticle(e.clientX, e.clientY, !!hit);
+  canvas.style.cursor = hit ? 'pointer' : '';
+});
+
+document.getElementById('btn-back').onclick = exitToGalaxy;
+
+/* Herramientas de vista */
+document.querySelectorAll('#view-tools button').forEach(btn => {
+  btn.onclick = () => {
+    const a = btn.dataset.action;
+    if (a === 'top') {
+      const d = camera.position.distanceTo(controls.target);
+      flyTo(controls.target.clone(), d, 1.2, state.followBody, null, new THREE.Vector3(0, 1, 0.001));
+    } else if (a === 'edge') {
+      const d = camera.position.distanceTo(controls.target);
+      flyTo(controls.target.clone(), d, 1.2, state.followBody, null, new THREE.Vector3(0.02, 0.06, 1));
+    } else if (a === 'labels') {
+      ui.setLabelsVisible(!ui.showLabels);
+    } else if (a === 'orbits') {
+      const on = !btn.classList.contains('active');
+      btn.classList.toggle('active', on);
+      solar.setOrbitsVisible(on);
+    }
+  };
+});
+
+/* Velocidad temporal */
+ui.el.speed.addEventListener('input', e => {
+  state.daysPerSecond = Number(e.target.value);
+  ui.el.speedValue.textContent = state.daysPerSecond === 0
+    ? 'PAUSA'
+    : state.daysPerSecond + ' d/s';
+});
+
+/* Dock */
+function buildDock() {
+  const items = POIS.map(p => ({
+    id: p.id, name: p.name, unlocked: p.explorable, locked: false, poi: p
+  }));
+  ui.buildDock(items, item => {
+    if (state.mode !== 'galaxy') {
+      exitToGalaxy();
+      setTimeout(() => selectPOI(item.poi), 900);
+    } else {
+      selectPOI(item.poi);
+    }
+    ui.setDockCurrent(item.id);
+  });
+}
+
+/* Resize */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  setResolutionScale(state.mode === 'blackhole' ? 0.72 : 1);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+/* Atajos */
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    ui.hidePanel();
+    if (state.mode !== 'galaxy') exitToGalaxy();
+  }
+  if (e.key === 'l' || e.key === 'L') ui.setLabelsVisible(!ui.showLabels);
+});
+
+/* ================================================================
+ *  Bucle principal
+ * ================================================================ */
+const clock = new THREE.Clock();
+
+function formatDistance() {
+  const d = camera.position.distanceTo(controls.target);
+  if (state.mode === 'galaxy') {
+    return (d * 1000).toLocaleString('es-ES', { maximumFractionDigits: 0 }) + ' ly';
+  }
+  if (state.mode === 'blackhole') {
+    return d.toFixed(1) + ' rₛ';
+  }
+  const au = d > 14 ? Math.pow((d - 14) / 26, 1 / 0.62) : d / 14 * 0.1;
+  return au.toFixed(au < 10 ? 2 : 1) + ' UA';
+}
+
+let statTick = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  updateFlight(dt);
+  updateFollow();
+  controls.update();
+
+  if (state.mode === 'galaxy') {
+    galaxy.update(dt, state.daysPerSecond);
+  } else if (state.mode === 'solar') {
+    solar.update(dt, state.daysPerSecond);
+  } else {
+    blackhole.update(dt, camera, state.daysPerSecond);
+  }
+
+  ui.updateLabels(camera, innerWidth, innerHeight);
+
+  statTick += dt;
+  if (statTick > 0.12) {
+    statTick = 0;
+    ui.setDistance(formatDistance());
+  }
+
+  composer.render();
+}
+
+/* Arranque diferido para que se pinte el loader */
+setTimeout(boot, 60);
+</script>
+<!-- /BUILD:JS -->
+</body>
+</html>
