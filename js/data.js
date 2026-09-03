@@ -116,6 +116,7 @@ export const POIS = [
   {
     id: 'alphacen', name: 'Alfa Centauri', tag: 'SISTEMA TRIPLE',
     category: 'sistema', ly: 4.37, l: 315.73, b: -0.68,
+    explorable: true, actionLabel: 'Explorar sistema triple',
     desc: 'El sistema estelar más cercano al Sol. Dos estrellas similares al Sol orbitan entre sí cada 80 años, acompañadas a lo lejos por Próxima Centauri, una enana roja con un planeta rocoso en zona habitable.',
     facts: [['Estrellas', '3'], ['Tipo', 'G2V + K1V + M5.5Ve'], ['Exoplanetas', '2 confirmados'], ['Periodo A-B', '79.9 años'], ['Próxima b', '1.07 M⊕']]
   },
@@ -140,6 +141,7 @@ export const POIS = [
   {
     id: 'proximab', name: 'Próxima Centauri b', tag: 'EXOPLANETA ROCOSO',
     category: 'sistema', ly: 4.24, l: 313.9, b: -1.7,
+    explorable: true, actionLabel: 'Explorar sistema de Próxima',
     desc: 'Un planeta rocoso de masa parecida a la Tierra en la zona habitable de la estrella más cercana al Sol. Completa una órbita en 11,2 días y recibe una cantidad de energía comparable a la terrestre, aunque las fulguraciones de su estrella son un desafío para su atmósfera.',
     facts: [['Masa mínima', '1.07 M⊕'], ['Periodo orbital', '11.186 días'], ['Semieje mayor', '0.0485 UA'], ['Estrella', 'Próxima Centauri'], ['Descubierto', '2016']]
   },

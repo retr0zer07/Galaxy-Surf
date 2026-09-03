@@ -6,7 +6,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 
-const ORDER = ['utils.js', 'data.js', 'galaxy.js', 'landmarks.js', 'solar.js', 'blackhole.js', 'orion.js', 'localgroup.js', 'discoveries.js', 'ui.js', 'main.js'];
+const ORDER = ['utils.js', 'data.js', 'galaxy.js', 'landmarks.js', 'solar.js', 'blackhole.js', 'orion.js', 'localgroup.js', 'alphacentauri.js', 'discoveries.js', 'ui.js', 'main.js'];
 const START = '<!-- BUILD:JS -->';
 const END = '<!-- /BUILD:JS -->';
 

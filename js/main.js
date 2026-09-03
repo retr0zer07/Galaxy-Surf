@@ -12,6 +12,7 @@ import { BlackHole } from './blackhole.js';
 import { OrionNebula } from './orion.js';
 import { LocalGroup } from './localgroup.js';
 import { Discoveries } from './discoveries.js';
+import { AlphaCentauri } from './alphacentauri.js';
 import { UI } from './ui.js';
 import { POIS, CATEGORIES, SUN } from './data.js';
 import { easeInOut, clamp } from './utils.js';
@@ -52,6 +53,7 @@ let blackhole = null;
 let orion = null;
 let localGroup = null;
 let discoveries = null;
+let alphaCentauri = null;
 let scene = null;
 let composer, bloom, renderPass;
 
@@ -74,6 +76,7 @@ const solarScene = new THREE.Scene();
 const bhScene = new THREE.Scene();
 const orionScene = new THREE.Scene();
 const localGroupScene = new THREE.Scene();
+const alphaCentauriScene = new THREE.Scene();
 
 function boot() {
   galaxy = new Galaxy();
@@ -95,6 +98,9 @@ function boot() {
   localGroup = new LocalGroup();
   localGroupScene.add(localGroup.group);
 
+  alphaCentauri = new AlphaCentauri();
+  alphaCentauriScene.add(alphaCentauri.group);
+
   discoveries = new Discoveries(POIS, CATEGORIES);
 
   scene = galaxyScene;
@@ -112,7 +118,7 @@ function boot() {
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, discoveries, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, alphaCentauri, discoveries, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -355,6 +361,50 @@ function selectOrionFeature(feature) {
 }
 
 /* ================================================================
+ *  Modo Alfa Centauri
+ * ================================================================ */
+function setupAlphaCentauriMode() {
+  state.mode = 'alphacentauri';
+  scene = alphaCentauriScene;
+  renderPass.scene = alphaCentauriScene;
+  bloom.strength = 0.95;
+  bloom.threshold = 0.45;
+  bloom.radius = 0.65;
+  setResolutionScale(1);
+
+  controls.minDistance = 2;
+  controls.maxDistance = 180;
+  const enteringProxima = state.destination?.id === 'proximab';
+  controls.target.set(enteringProxima ? 42 : 12, enteringProxima ? -13 : 0, enteringProxima ? -8 : 0);
+  controls.enablePan = true;
+
+  ui.setMode('alphacentauri');
+  ui.setContext('Alfa Centauri · Sistema triple · 4.37 años luz');
+  ui.setScale('~ 200 UA · escala visual');
+  ui.clearLabels();
+  ui.setTarget(enteringProxima ? 'Próxima Centauri b' : 'Alfa Centauri');
+
+  for (const feature of alphaCentauri.features) {
+    const info = feature.userData.info;
+    ui.addLabel(feature, info.name, 'poi', {
+      pulse: info.name === 'Próxima Centauri b',
+      priority: info.name === 'Próxima Centauri b' ? 2 : 1,
+      width: info.name.length * 7 + 26,
+      onClick: () => selectAlphaFeature(feature)
+    });
+  }
+  ui.setLabelsVisible(ui.showLabels);
+}
+
+function selectAlphaFeature(feature) {
+  const info = feature.userData.info;
+  state.selected = { obj: feature, data: info };
+  ui.setTarget(info.name);
+  ui.showPanel(info);
+  flyTo(feature.getWorldPosition(new THREE.Vector3()), info.name === 'Próxima Centauri b' ? 7 : 11, 1.3, feature);
+}
+
+/* ================================================================
  *  Modo Grupo Local
  * ================================================================ */
 function setupLocalGroupMode() {
@@ -449,11 +499,18 @@ const DESTINATIONS = {
     setup: setupOrionMode,
     enter: { pos: [0, 12, 42], fly: { dist: 46, dur: 2.5 } },
     back: { dist: 190, dir: [0, 120, 150] }
+  },
+  alphacen: {
+    setup: setupAlphaCentauriMode,
+    enter: { pos: [9, 17, 72], fly: { dist: 72, dur: 2.3 } },
+    back: { dist: 190, dir: [0, 120, 150] }
   }
 };
 
 function destinationKey(poi) {
-  return poi.id === 'sgra' ? 'blackhole' : poi.id;
+  if (poi.id === 'sgra') return 'blackhole';
+  if (poi.id === 'proximab') return 'alphacen';
+  return poi.id;
 }
 
 function enterDestination(poi) {
@@ -471,11 +528,14 @@ function enterDestination(poi) {
     setTimeout(() => {
       dest.setup();
       camera.position.fromArray(dest.enter.pos);
-      controls.target.set(0, 0, 0);
+      const entryTarget = key === 'alphacen' && poi.id === 'proximab'
+        ? new THREE.Vector3(42, -13, -8)
+        : new THREE.Vector3(0, 0, 0);
+      controls.target.copy(entryTarget);
       controls.update();
       ui.fade(false);
       state.transitioning = false;
-      flyTo(new THREE.Vector3(0, 0, 0), dest.enter.fly.dist, dest.enter.fly.dur);
+      flyTo(entryTarget, dest.enter.fly.dist, dest.enter.fly.dur);
     }, 600);
   });
 }
@@ -575,6 +635,7 @@ function pickList() {
   if (state.mode === 'galaxy') return galaxy.markers;
   if (state.mode === 'solar') return solar.pickables;
   if (state.mode === 'orion') return orion.pickables;
+  if (state.mode === 'alphacentauri') return alphaCentauri.pickables;
   if (state.mode === 'localgroup') return localGroup.pickables;
   return [];
 }
@@ -599,6 +660,8 @@ canvas.addEventListener('pointerup', e => {
     if (b) selectBody(b);
   } else if (state.mode === 'orion') {
     selectOrionFeature(hit.object);
+  } else if (state.mode === 'alphacentauri') {
+    selectAlphaFeature(hit.object);
   } else if (state.mode === 'localgroup') {
     selectLocalGalaxy(hit.object);
   }
@@ -795,6 +858,8 @@ function animate() {
     solar.update(dt, state.daysPerSecond);
   } else if (state.mode === 'orion') {
     orion.update(dt, state.daysPerSecond);
+  } else if (state.mode === 'alphacentauri') {
+    alphaCentauri.update(dt, state.daysPerSecond);
   } else if (state.mode === 'localgroup') {
     localGroup.update(dt);
   } else {

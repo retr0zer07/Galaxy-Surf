@@ -514,6 +514,7 @@ const POIS = [
   {
     id: 'alphacen', name: 'Alfa Centauri', tag: 'SISTEMA TRIPLE',
     category: 'sistema', ly: 4.37, l: 315.73, b: -0.68,
+    explorable: true, actionLabel: 'Explorar sistema triple',
     desc: 'El sistema estelar más cercano al Sol. Dos estrellas similares al Sol orbitan entre sí cada 80 años, acompañadas a lo lejos por Próxima Centauri, una enana roja con un planeta rocoso en zona habitable.',
     facts: [['Estrellas', '3'], ['Tipo', 'G2V + K1V + M5.5Ve'], ['Exoplanetas', '2 confirmados'], ['Periodo A-B', '79.9 años'], ['Próxima b', '1.07 M⊕']]
   },
@@ -538,6 +539,7 @@ const POIS = [
   {
     id: 'proximab', name: 'Próxima Centauri b', tag: 'EXOPLANETA ROCOSO',
     category: 'sistema', ly: 4.24, l: 313.9, b: -1.7,
+    explorable: true, actionLabel: 'Explorar sistema de Próxima',
     desc: 'Un planeta rocoso de masa parecida a la Tierra en la zona habitable de la estrella más cercana al Sol. Completa una órbita en 11,2 días y recibe una cantidad de energía comparable a la terrestre, aunque las fulguraciones de su estrella son un desafío para su atmósfera.',
     facts: [['Masa mínima', '1.07 M⊕'], ['Periodo orbital', '11.186 días'], ['Semieje mayor', '0.0485 UA'], ['Estrella', 'Próxima Centauri'], ['Descubierto', '2016']]
   },
@@ -3161,6 +3163,174 @@ class LocalGroup {
   get pickables() { return this.bodies; }
 }
 
+/* ========== alphacentauri.js ========== */
+class AlphaCentauri {
+  constructor() {
+    this.group = new THREE.Group();
+    this.features = [];
+    this.time = 0;
+    this.flareTex = flareSprite();
+    this.rnd = makeRandom(615);
+
+    this.#buildStarfield();
+    this.#buildBinary();
+    this.#buildProxima();
+  }
+
+  #buildStarfield() {
+    const positions = [];
+    for (let i = 0; i < 6500; i++) {
+      const r = 420 + this.rnd() * 140;
+      const u = this.rnd() * 2 - 1;
+      const a = this.rnd() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      positions.push(r * s * Math.cos(a), r * u, r * s * Math.sin(a));
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    this.group.add(new THREE.Points(geometry, new THREE.PointsMaterial({
+      map: starSprite(32), size: 1.2, sizeAttenuation: false, color: 0xb7ceff,
+      transparent: true, opacity: 0.82, depthWrite: false, blending: THREE.AdditiveBlending
+    })));
+  }
+
+  #star(radius, color, flareSize) {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 48, 32),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    group.add(body);
+    const flare = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.flareTex, color, transparent: true, opacity: 0.78,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    flare.scale.setScalar(flareSize);
+    group.add(flare);
+    return { group, body, flare };
+  }
+
+  #orbit(radius, color, opacity = 0.2) {
+    const points = [];
+    for (let i = 0; i <= 128; i++) {
+      const a = i / 128 * Math.PI * 2;
+      points.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
+    }
+    return new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity })
+    );
+  }
+
+  #feature(object, info) {
+    object.userData.info = info;
+    this.features.push(object);
+  }
+
+  #buildBinary() {
+    this.binary = new THREE.Group();
+    this.group.add(this.binary);
+    this.binary.add(this.#orbit(13.5, 0xffd9a0));
+
+    const alphaA = this.#star(2.9, 0xffe5b0, 11);
+    const alphaB = this.#star(2.35, 0xffbd72, 8.5);
+    this.binary.add(alphaA.group, alphaB.group);
+    this.alphaA = alphaA.group;
+    this.alphaB = alphaB.group;
+
+    this.#feature(alphaA.body, {
+      tag: 'ALFA CENTAURI A · G2V', name: 'Rigil Kentaurus',
+      sub: 'Estrella primaria del par Alfa Centauri A/B',
+      desc: 'La estrella más parecida al Sol de las cercanías. Es ligeramente más masiva y luminosa, y junto con Alfa Centauri B completa una órbita mutua muy excéntrica cada 79,9 años.',
+      facts: [['Masa', '1.10 M☉'], ['Radio', '1.22 R☉'], ['Temperatura', '5 790 K'], ['Luminosidad', '1.52 L☉'], ['Tipo', 'G2V']]
+    });
+    this.#feature(alphaB.body, {
+      tag: 'ALFA CENTAURI B · K1V', name: 'Toliman',
+      sub: 'Estrella secundaria del par Alfa Centauri A/B',
+      desc: 'Una estrella naranja algo más pequeña y fría que el Sol. A pesar de estar separada de Alfa A por una distancia comparable a Saturno-Sol en el máximo acercamiento, el sistema puede conservar regiones planetarias estables.',
+      facts: [['Masa', '0.91 M☉'], ['Radio', '0.86 R☉'], ['Temperatura', '5 260 K'], ['Luminosidad', '0.50 L☉'], ['Tipo', 'K1V']]
+    });
+  }
+
+  #buildProxima() {
+    this.proximaSystem = new THREE.Group();
+    this.proximaSystem.position.set(42, -13, -8);
+    this.group.add(this.proximaSystem);
+
+    const star = this.#star(2.2, 0xff6048, 10);
+    this.proximaSystem.add(star.group);
+    this.proximaStar = star.group;
+
+    const habitable = new THREE.Mesh(
+      new THREE.RingGeometry(7.2, 8.7, 96),
+      new THREE.MeshBasicMaterial({
+        color: 0x61cfa5, transparent: true, opacity: 0.13,
+        side: THREE.DoubleSide, depthWrite: false
+      })
+    );
+    habitable.rotation.x = Math.PI / 2;
+    this.proximaSystem.add(habitable);
+
+    this.proximaSystem.add(this.#orbit(7.9, 0x73e0ba, 0.5));
+    const planetPivot = new THREE.Group();
+    this.proximaSystem.add(planetPivot);
+    this.proximaPlanetPivot = planetPivot;
+
+    const planet = new THREE.Mesh(
+      new THREE.SphereGeometry(1.15, 48, 32),
+      new THREE.MeshStandardMaterial({
+        map: planetTexture({
+          style: 'earth', seed: 424, width: 1024, height: 512,
+          palette: ['#0a1d38', '#174874', '#27759b', '#487a4a', '#908158']
+        }),
+        roughness: 0.9, metalness: 0
+      })
+    );
+    planet.position.x = 7.9;
+    planetPivot.add(planet);
+    this.proximaPlanet = planet;
+
+    const atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(1.21, 32, 24),
+      new THREE.MeshBasicMaterial({ color: 0x4da7ff, transparent: true, opacity: 0.2, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    planet.add(atmosphere);
+
+    this.#feature(star.body, {
+      tag: 'PRÓXIMA CENTAURI · M5.5Ve', name: 'Próxima Centauri',
+      sub: 'La estrella más cercana al Sol · 4.24 ly',
+      desc: 'Una enana roja ultrafría y activa. Sus fulguraciones pueden multiplicar temporalmente su brillo, bañando a Próxima b con radiación ultravioleta y rayos X.',
+      facts: [['Masa', '0.12 M☉'], ['Radio', '0.15 R☉'], ['Temperatura', '3 042 K'], ['Luminosidad', '0.0017 L☉'], ['Fulguraciones', 'frecuentes']]
+    });
+    this.#feature(planet, {
+      tag: 'EXOPLANETA ROCOSO', name: 'Próxima Centauri b',
+      sub: 'Zona habitable conservadora de Próxima Centauri',
+      desc: 'Un mundo de masa mínima cercana a la Tierra. Su corta órbita lo deja sincronizado por marea: un hemisferio mira siempre a la estrella y el otro permanece en noche perpetua.',
+      facts: [['Masa mínima', '1.07 M⊕'], ['Periodo', '11.186 días'], ['Distancia', '0.0485 UA'], ['Insolación', '0.65 S⊕'], ['Rotación', 'probable acople mareal']]
+    });
+  }
+
+  update(dt, daysPerSecond) {
+    this.time += dt;
+    const years = this.time * Math.min(daysPerSecond, 30) * 0.02;
+    const binaryPhase = years / 79.9 * Math.PI * 2;
+    this.alphaA.position.set(Math.cos(binaryPhase) * 5.8, 0, Math.sin(binaryPhase) * 5.8);
+    this.alphaB.position.set(-Math.cos(binaryPhase) * 7.7, 0, -Math.sin(binaryPhase) * 7.7);
+    this.alphaA.rotation.y += dt * 0.14;
+    this.alphaB.rotation.y += dt * 0.11;
+
+    const planetPhase = this.time * Math.min(daysPerSecond, 30) * 0.18;
+    this.proximaPlanetPivot.rotation.y = planetPhase;
+    this.proximaPlanet.rotation.y += dt * 0.25;
+
+    const flare = 0.72 + Math.max(0, Math.sin(this.time * 0.43) - 0.84) * 2.5;
+    this.proximaStar.children[1].material.opacity = Math.min(flare, 1);
+    this.proximaStar.children[1].scale.setScalar(10 * (0.85 + flare * 0.28));
+  }
+
+  get pickables() { return this.features; }
+}
+
 /* ========== discoveries.js ========== */
 const STORAGE_KEY = 'galaxy-surf-discoveries-v1';
 
@@ -3595,6 +3765,7 @@ let blackhole = null;
 let orion = null;
 let localGroup = null;
 let discoveries = null;
+let alphaCentauri = null;
 let scene = null;
 let composer, bloom, renderPass;
 
@@ -3617,6 +3788,7 @@ const solarScene = new THREE.Scene();
 const bhScene = new THREE.Scene();
 const orionScene = new THREE.Scene();
 const localGroupScene = new THREE.Scene();
+const alphaCentauriScene = new THREE.Scene();
 
 function boot() {
   galaxy = new Galaxy();
@@ -3638,6 +3810,9 @@ function boot() {
   localGroup = new LocalGroup();
   localGroupScene.add(localGroup.group);
 
+  alphaCentauri = new AlphaCentauri();
+  alphaCentauriScene.add(alphaCentauri.group);
+
   discoveries = new Discoveries(POIS, CATEGORIES);
 
   scene = galaxyScene;
@@ -3655,7 +3830,7 @@ function boot() {
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, discoveries, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, alphaCentauri, discoveries, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -3898,6 +4073,50 @@ function selectOrionFeature(feature) {
 }
 
 /* ================================================================
+ *  Modo Alfa Centauri
+ * ================================================================ */
+function setupAlphaCentauriMode() {
+  state.mode = 'alphacentauri';
+  scene = alphaCentauriScene;
+  renderPass.scene = alphaCentauriScene;
+  bloom.strength = 0.95;
+  bloom.threshold = 0.45;
+  bloom.radius = 0.65;
+  setResolutionScale(1);
+
+  controls.minDistance = 2;
+  controls.maxDistance = 180;
+  const enteringProxima = state.destination?.id === 'proximab';
+  controls.target.set(enteringProxima ? 42 : 12, enteringProxima ? -13 : 0, enteringProxima ? -8 : 0);
+  controls.enablePan = true;
+
+  ui.setMode('alphacentauri');
+  ui.setContext('Alfa Centauri · Sistema triple · 4.37 años luz');
+  ui.setScale('~ 200 UA · escala visual');
+  ui.clearLabels();
+  ui.setTarget(enteringProxima ? 'Próxima Centauri b' : 'Alfa Centauri');
+
+  for (const feature of alphaCentauri.features) {
+    const info = feature.userData.info;
+    ui.addLabel(feature, info.name, 'poi', {
+      pulse: info.name === 'Próxima Centauri b',
+      priority: info.name === 'Próxima Centauri b' ? 2 : 1,
+      width: info.name.length * 7 + 26,
+      onClick: () => selectAlphaFeature(feature)
+    });
+  }
+  ui.setLabelsVisible(ui.showLabels);
+}
+
+function selectAlphaFeature(feature) {
+  const info = feature.userData.info;
+  state.selected = { obj: feature, data: info };
+  ui.setTarget(info.name);
+  ui.showPanel(info);
+  flyTo(feature.getWorldPosition(new THREE.Vector3()), info.name === 'Próxima Centauri b' ? 7 : 11, 1.3, feature);
+}
+
+/* ================================================================
  *  Modo Grupo Local
  * ================================================================ */
 function setupLocalGroupMode() {
@@ -3992,11 +4211,18 @@ const DESTINATIONS = {
     setup: setupOrionMode,
     enter: { pos: [0, 12, 42], fly: { dist: 46, dur: 2.5 } },
     back: { dist: 190, dir: [0, 120, 150] }
+  },
+  alphacen: {
+    setup: setupAlphaCentauriMode,
+    enter: { pos: [9, 17, 72], fly: { dist: 72, dur: 2.3 } },
+    back: { dist: 190, dir: [0, 120, 150] }
   }
 };
 
 function destinationKey(poi) {
-  return poi.id === 'sgra' ? 'blackhole' : poi.id;
+  if (poi.id === 'sgra') return 'blackhole';
+  if (poi.id === 'proximab') return 'alphacen';
+  return poi.id;
 }
 
 function enterDestination(poi) {
@@ -4014,11 +4240,14 @@ function enterDestination(poi) {
     setTimeout(() => {
       dest.setup();
       camera.position.fromArray(dest.enter.pos);
-      controls.target.set(0, 0, 0);
+      const entryTarget = key === 'alphacen' && poi.id === 'proximab'
+        ? new THREE.Vector3(42, -13, -8)
+        : new THREE.Vector3(0, 0, 0);
+      controls.target.copy(entryTarget);
       controls.update();
       ui.fade(false);
       state.transitioning = false;
-      flyTo(new THREE.Vector3(0, 0, 0), dest.enter.fly.dist, dest.enter.fly.dur);
+      flyTo(entryTarget, dest.enter.fly.dist, dest.enter.fly.dur);
     }, 600);
   });
 }
@@ -4118,6 +4347,7 @@ function pickList() {
   if (state.mode === 'galaxy') return galaxy.markers;
   if (state.mode === 'solar') return solar.pickables;
   if (state.mode === 'orion') return orion.pickables;
+  if (state.mode === 'alphacentauri') return alphaCentauri.pickables;
   if (state.mode === 'localgroup') return localGroup.pickables;
   return [];
 }
@@ -4142,6 +4372,8 @@ canvas.addEventListener('pointerup', e => {
     if (b) selectBody(b);
   } else if (state.mode === 'orion') {
     selectOrionFeature(hit.object);
+  } else if (state.mode === 'alphacentauri') {
+    selectAlphaFeature(hit.object);
   } else if (state.mode === 'localgroup') {
     selectLocalGalaxy(hit.object);
   }
@@ -4338,6 +4570,8 @@ function animate() {
     solar.update(dt, state.daysPerSecond);
   } else if (state.mode === 'orion') {
     orion.update(dt, state.daysPerSecond);
+  } else if (state.mode === 'alphacentauri') {
+    alphaCentauri.update(dt, state.daysPerSecond);
   } else if (state.mode === 'localgroup') {
     localGroup.update(dt);
   } else {
