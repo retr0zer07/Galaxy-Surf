@@ -374,15 +374,14 @@ function setupAlphaCentauriMode() {
 
   controls.minDistance = 2;
   controls.maxDistance = 180;
-  const enteringProxima = state.destination?.id === 'proximab';
-  controls.target.set(enteringProxima ? 42 : 12, enteringProxima ? -13 : 0, enteringProxima ? -8 : 0);
+  controls.target.set(12, 0, 0);
   controls.enablePan = true;
 
   ui.setMode('alphacentauri');
   ui.setContext('Alfa Centauri · Sistema triple · 4.37 años luz');
   ui.setScale('~ 200 UA · escala visual');
   ui.clearLabels();
-  ui.setTarget(enteringProxima ? 'Próxima Centauri b' : 'Alfa Centauri');
+  ui.setTarget('Alfa Centauri');
 
   for (const feature of alphaCentauri.features) {
     const info = feature.userData.info;
@@ -509,7 +508,6 @@ const DESTINATIONS = {
 
 function destinationKey(poi) {
   if (poi.id === 'sgra') return 'blackhole';
-  if (poi.id === 'proximab') return 'alphacen';
   return poi.id;
 }
 
@@ -529,9 +527,7 @@ function enterDestination(poi) {
     setTimeout(() => {
       dest.setup();
       camera.position.fromArray(dest.enter.pos);
-      const entryTarget = key === 'alphacen' && poi.id === 'proximab'
-        ? new THREE.Vector3(42, -13, -8)
-        : new THREE.Vector3(0, 0, 0);
+      const entryTarget = new THREE.Vector3(0, 0, 0);
       controls.target.copy(entryTarget);
       controls.update();
       ui.fade(false);

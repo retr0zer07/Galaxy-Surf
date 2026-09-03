@@ -115,7 +115,7 @@ export const POIS = [
   /* ---------------- Sistemas estelares ---------------- */
   {
     id: 'alphacen', name: 'Alfa Centauri', tag: 'SISTEMA TRIPLE',
-    category: 'sistema', ly: 4.37, l: 315.73, b: -0.68,
+    category: 'sistema', ly: 4.37, visualDistanceLy: 1800, l: 315.73, b: -0.68,
     explorable: true, actionLabel: 'Explorar sistema triple',
     desc: 'El sistema estelar más cercano al Sol. Dos estrellas similares al Sol orbitan entre sí cada 80 años, acompañadas a lo lejos por Próxima Centauri, una enana roja con un planeta rocoso en zona habitable.',
     facts: [['Estrellas', '3'], ['Tipo', 'G2V + K1V + M5.5Ve'], ['Exoplanetas', '2 confirmados'], ['Periodo A-B', '79.9 años'], ['Próxima b', '1.07 M⊕']]
@@ -137,13 +137,6 @@ export const POIS = [
     category: 'sistema', ly: 548, l: 199.79, b: -8.96,
     desc: 'Si ocupara el lugar del Sol, su superficie engulliría la órbita de Júpiter. Es una supergigante en fase terminal: explotará como supernova en los próximos 100 000 años y brillará como la Luna llena.',
     facts: [['Radio', '~ 764 R☉'], ['Masa', '16.5 M☉'], ['Tipo', 'M1-2 Ia-ab'], ['Temperatura', '3 600 K'], ['Supernova', '< 100 000 años']]
-  },
-  {
-    id: 'proximab', name: 'Próxima Centauri b', tag: 'EXOPLANETA ROCOSO',
-    category: 'sistema', ly: 4.24, l: 313.9, b: -1.7,
-    explorable: true, actionLabel: 'Explorar sistema de Próxima',
-    desc: 'Un planeta rocoso de masa parecida a la Tierra en la zona habitable de la estrella más cercana al Sol. Completa una órbita en 11,2 días y recibe una cantidad de energía comparable a la terrestre, aunque las fulguraciones de su estrella son un desafío para su atmósfera.',
-    facts: [['Masa mínima', '1.07 M⊕'], ['Periodo orbital', '11.186 días'], ['Semieje mayor', '0.0485 UA'], ['Estrella', 'Próxima Centauri'], ['Descubierto', '2016']]
   },
   {
     id: 'barnard', name: 'Estrella de Barnard', tag: 'ENANA ROJA',
@@ -347,7 +340,6 @@ const DEFAULT_SIZE = {
 /* Representación visual de cada destino en la vista galáctica */
 const SHAPES = {
   alphacen: { shape: 'multi', size: 0.26, stars: ['#fff4e0', '#ffd9a0', '#ff8a6a'] },
-  proximab: { shape: 'planet', size: 0.24, tint: ['#6fa8ff', '#4c6da8'], star: '#ff7050' },
   barnard: { shape: 'multi', size: 0.23, stars: ['#ff7650'] },
   wolf359: { shape: 'multi', size: 0.2, stars: ['#e94f35'] },
   sirius: { shape: 'multi', size: 0.24, stars: ['#dbe6ff', '#ffffff'] },
@@ -389,7 +381,7 @@ const SHAPES = {
 };
 
 for (const p of POIS) {
-  if (!p.position) p.position = fromSun(p.ly, p.l, p.b);
+  if (!p.position) p.position = fromSun(p.visualDistanceLy || p.ly, p.l, p.b);
   if (!p.color) p.color = CATEGORY_COLOR[p.category];
   if (!p.sub) {
     const label = p.tag.charAt(0) + p.tag.slice(1).toLowerCase();
