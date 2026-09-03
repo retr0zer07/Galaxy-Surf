@@ -395,6 +395,10 @@ kbd {
   .nav-list { max-height: 44vh; }
   .nav-foot { display: none; }
   #view-tools { bottom: auto; top: 84px; right: 14px; }
-  .speed { display: none; }
+  .speed { display: block; width: 148px; padding: 9px 11px; }
+  .speed label { font-size: 8.5px; margin-bottom: 7px; }
+  .speed input { height: 18px; }
+  .speed input::-webkit-slider-thumb { width: 18px; height: 18px; }
+  .speed input::-moz-range-thumb { width: 18px; height: 18px; }
   #hint { display: none; }
 }
