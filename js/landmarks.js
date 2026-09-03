@@ -493,6 +493,27 @@ export class Landmarks {
     }
   }
 
+  setFocus(selectedPoi, isolation) {
+    const dim = 1 - isolation * 0.88;
+
+    for (const [id, group] of this.byId) {
+      const keep = id === selectedPoi?.id;
+      group.traverse(object => {
+        const material = object.material;
+        if (!material) return;
+        const materials = Array.isArray(material) ? material : [material];
+        for (const entry of materials) {
+          if (entry.userData.baseOpacity === undefined) {
+            entry.userData.baseOpacity = entry.opacity;
+            entry.userData.baseTransparent = entry.transparent;
+          }
+          entry.transparent = entry.userData.baseTransparent || isolation > 0;
+          entry.opacity = entry.userData.baseOpacity * (keep ? 1 : dim);
+        }
+      });
+    }
+  }
+
   dispose() {
     this.group.traverse(o => {
       o.geometry?.dispose();

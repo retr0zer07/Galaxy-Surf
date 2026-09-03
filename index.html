@@ -91,6 +91,10 @@
     <label>Tiempo <b id="speed-value">1×</b></label>
     <input id="speed" type="range" min="0" max="200" value="20" />
   </div>
+  <div class="focus">
+    <label>Aislar <b id="focus-value">0%</b></label>
+    <input id="focus" type="range" min="0" max="100" value="0" />
+  </div>
 </div>
 
 <!-- Transición -->
@@ -1401,8 +1405,9 @@ class Galaxy {
     };
     this.coreSize = 13;
     this.coreGlow = mk(this.coreSize, 0xffc477, 0.3, this.cloudTex);
-    mk(7, 0xfff0d0, 0.22, this.cloudTex);
+    this.coreInner = mk(7, 0xfff0d0, 0.22, this.cloudTex);
     this.coreFlare = mk(5.5, 0xffffff, 0.2, this.flareTex);
+    this.coreSprites = [this.coreGlow, this.coreInner, this.coreFlare];
   }
 
   /* --------------------------------------------------------------
@@ -1475,6 +1480,27 @@ class Galaxy {
       if (obj.material?.uniforms?.uPixelRatio) obj.material.uniforms.uPixelRatio.value = pr;
     };
     this.group.traverse(apply);
+  }
+
+  setFocus(selectedPoi, isolation) {
+    const dim = 1 - isolation * 0.88;
+
+    for (const marker of this.markers) {
+      const material = marker.material;
+      if (material.userData.baseOpacity === undefined) material.userData.baseOpacity = material.opacity;
+      material.opacity = material.userData.baseOpacity * (marker.userData.poi === selectedPoi ? 1 : dim);
+    }
+
+    for (const material of this.materials) {
+      if (material.userData.baseOpacity === undefined) material.userData.baseOpacity = material.opacity;
+      material.opacity = material.userData.baseOpacity * dim;
+    }
+
+    for (const sprite of this.coreSprites) {
+      const material = sprite.material;
+      if (material.userData.baseOpacity === undefined) material.userData.baseOpacity = material.opacity;
+      material.opacity = material.userData.baseOpacity * dim;
+    }
   }
 
   dispose() {
@@ -1978,6 +2004,27 @@ class Landmarks {
     }
   }
 
+  setFocus(selectedPoi, isolation) {
+    const dim = 1 - isolation * 0.88;
+
+    for (const [id, group] of this.byId) {
+      const keep = id === selectedPoi?.id;
+      group.traverse(object => {
+        const material = object.material;
+        if (!material) return;
+        const materials = Array.isArray(material) ? material : [material];
+        for (const entry of materials) {
+          if (entry.userData.baseOpacity === undefined) {
+            entry.userData.baseOpacity = entry.opacity;
+            entry.userData.baseTransparent = entry.transparent;
+          }
+          entry.transparent = entry.userData.baseTransparent || isolation > 0;
+          entry.opacity = entry.userData.baseOpacity * (keep ? 1 : dim);
+        }
+      });
+    }
+  }
+
   dispose() {
     this.group.traverse(o => {
       o.geometry?.dispose();
@@ -2008,6 +2055,7 @@ class SolarSystem {
     this.bodies = [];      // objetos seleccionables / etiquetables
     this.planets = [];
     this.days = 0;
+    this.visualSpinDays = 0;
 
     this.flareTex = flareSprite();
     this.cloudTex = cloudSprite(256, 23);
@@ -2017,6 +2065,50 @@ class SolarSystem {
     this.#buildPlanets();
     this.#buildBelt(ASTEROID_BELT, 0.055, '#8b7f70', 'belt');
     this.#buildBelt(KUIPER_BELT, 0.09, '#6f7f96', 'kuiper');
+  }
+
+  #cloudLayerTexture(seed) {
+    const width = 1024, height = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(width, height);
+
+    for (let y = 0; y < height; y++) {
+      const lat = Math.abs(y / height * 2 - 1);
+      for (let x = 0; x < width; x++) {
+        const n = fbm(x / width * 6.5, y / height * 6.5, seed, 6);
+        const wisps = fbm(x / width * 23, y / height * 12, seed + 41, 3);
+        const density = n * 0.7 + wisps * 0.3 - 0.64 - lat * 0.12;
+        const alpha = Math.max(0, Math.min(1, density * 3.5));
+        const i = (y * width + x) * 4;
+        img.data[i] = 236; img.data[i + 1] = 246; img.data[i + 2] = 255;
+        img.data[i + 3] = alpha * 180;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    return texture;
+  }
+
+  #moonGeometry(radius, seed) {
+    const geometry = new THREE.SphereGeometry(radius, 48, 32);
+    const position = geometry.attributes.position;
+    const vertex = new THREE.Vector3();
+
+    for (let i = 0; i < position.count; i++) {
+      vertex.fromBufferAttribute(position, i).normalize();
+      const longitude = Math.atan2(vertex.z, vertex.x) / (Math.PI * 2) + 0.5;
+      const latitude = Math.asin(vertex.y) / Math.PI + 0.5;
+      const relief = fbm(longitude * 9, latitude * 9, seed, 4) - 0.5;
+      vertex.multiplyScalar(radius * (1 + relief * 0.045));
+      position.setXYZ(i, vertex.x, vertex.y, vertex.z);
+    }
+    position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    return geometry;
   }
 
   /* ---------------- Fondo de estrellas lejanas ---------------- */
@@ -2182,6 +2274,18 @@ class SolarSystem {
       mesh.userData.body = { data: p, kind: 'planet' };
       spin.add(mesh);
 
+      let cloudLayer = null;
+      if (p.clouds) {
+        cloudLayer = new THREE.Mesh(
+          new THREE.SphereGeometry(p.visualR * 1.012, 64, 48),
+          new THREE.MeshBasicMaterial({
+            map: this.#cloudLayerTexture(p.radiusKm), transparent: true,
+            opacity: 0.76, depthWrite: false
+          })
+        );
+        spin.add(cloudLayer);
+      }
+
       // Atmósfera (halo de dispersión)
       if (p.atmosphere) {
         const atm = new THREE.Mesh(
@@ -2228,10 +2332,10 @@ class SolarSystem {
         holder.add(mPlane);
 
         const mMesh = new THREE.Mesh(
-          new THREE.SphereGeometry(m.visualR, 24, 18),
+          this.#moonGeometry(m.visualR, m.radiusKm * 7),
           new THREE.MeshStandardMaterial({
             map: planetTexture({
-              style: 'rocky', seed: m.radiusKm * 7, width: 256, height: 128,
+              style: 'rocky', seed: m.radiusKm * 7, width: m.name === 'Luna' ? 1024 : 384, height: m.name === 'Luna' ? 512 : 192,
               palette: [
                 new THREE.Color(m.color).multiplyScalar(0.45).getStyle(),
                 m.color,
@@ -2239,7 +2343,8 @@ class SolarSystem {
               ],
               craters: m.craters || 0
             }),
-            roughness: 1
+            roughness: 0.98,
+            bumpScale: m.name === 'Luna' ? 0.1 : 0.04
           })
         );
         mMesh.userData.body = { data: m, kind: 'moon', parent: p };
@@ -2263,7 +2368,7 @@ class SolarSystem {
       }
 
       const entry = {
-        data: p, plane, holder, spin, mesh, moons,
+        data: p, plane, holder, spin, mesh, moons, cloudLayer,
         phase: rnd() * Math.PI * 2, b
       };
       this.planets.push(entry);
@@ -2309,6 +2414,7 @@ class SolarSystem {
   /* ---------------- Animación ---------------- */
   update(dt, daysPerSecond) {
     this.days += dt * daysPerSecond;
+    this.visualSpinDays += dt * Math.min(daysPerSecond, 0.35);
 
     this.sunMesh.rotation.y += dt * 0.02;
     const pulse = 1 + Math.sin(this.days * 0.05) * 0.03;
@@ -2322,14 +2428,15 @@ class SolarSystem {
       pl.holder.position.set(
         p.visualD * (Math.cos(E) - p.ecc), 0, pl.b * Math.sin(E)
       );
-      pl.spin.rotation.y = (this.days / p.rotationDays) * Math.PI * 2;
+      pl.spin.rotation.y = (this.visualSpinDays / p.rotationDays) * Math.PI * 2;
+      if (pl.cloudLayer) pl.cloudLayer.rotation.y = this.visualSpinDays * Math.PI * 2 * 0.82;
 
       for (const mo of pl.moons) {
         const a = mo.phase + (this.days / mo.data.periodDays) * Math.PI * 2;
         mo.mesh.position.set(
           Math.cos(a) * mo.data.visualD, 0, Math.sin(a) * mo.data.visualD
         );
-        mo.mesh.rotation.y = a;   // acoplamiento de marea
+        mo.mesh.rotation.y = -a + Math.PI / 2;
       }
     }
 
@@ -2340,6 +2447,27 @@ class SolarSystem {
   setOrbitsVisible(v) {
     this.orbitGroup.visible = v;
     for (const o of this.moonOrbits || []) o.visible = v;
+  }
+
+  setFocus(selected, isolation) {
+    const dim = 1 - isolation * 0.88;
+    const keepRoot = selected?.parent === this.group ? null : selected?.parent || null;
+
+    this.group.traverse(object => {
+      const material = object.material;
+      if (!material) return;
+      const materials = Array.isArray(material) ? material : [material];
+      const keep = object === selected || (keepRoot && object.parent === keepRoot);
+
+      for (const entry of materials) {
+        if (entry.userData.baseOpacity === undefined) {
+          entry.userData.baseOpacity = entry.opacity;
+          entry.userData.baseTransparent = entry.transparent;
+        }
+        entry.transparent = entry.userData.baseTransparent || isolation > 0;
+        entry.opacity = entry.userData.baseOpacity * (keep ? 1 : dim);
+      }
+    });
   }
 
   /** Meshes candidatos para el raycaster */
@@ -2968,7 +3096,8 @@ const state = {
   selected: null,
   followBody: null,
   transitioning: false,
-  filter: 'all'
+  filter: 'all',
+  isolation: 0
 };
 
 /* ================================================================
@@ -3075,6 +3204,7 @@ function poiMarker(poi) {
 
 function selectPOI(poi) {
   state.selected = poi;
+  applyIsolation();
   ui.setTarget(poi.name);
   ui.setNavCurrent(poi.id, poi.name);
   ui.showPanel({
@@ -3138,6 +3268,7 @@ function setupSolarMode() {
 
 function selectBody(b) {
   state.selected = b;
+  applyIsolation();
   ui.setTarget(b.data.name);
 
   if (b.kind === 'sun') {
@@ -3393,6 +3524,25 @@ ui.el.speed.addEventListener('input', e => {
   ui.el.speedValue.textContent = state.daysPerSecond === 0
     ? 'PAUSA'
     : state.daysPerSecond + ' d/s';
+});
+
+const focusSlider = document.getElementById('focus');
+const focusValue = document.getElementById('focus-value');
+
+function applyIsolation() {
+  if (!solar) return;
+  if (state.mode === 'solar') {
+    solar.setFocus(state.selected?.obj, state.isolation);
+  } else if (state.mode === 'galaxy') {
+    galaxy.setFocus(state.selected, state.isolation);
+    landmarks.setFocus(state.selected, state.isolation);
+  }
+}
+
+focusSlider.addEventListener('input', e => {
+  state.isolation = Number(e.target.value) / 100;
+  focusValue.textContent = Math.round(state.isolation * 100) + '%';
+  applyIsolation();
 });
 
 /* Navegador de destinos */

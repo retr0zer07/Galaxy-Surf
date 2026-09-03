@@ -51,7 +51,8 @@ const state = {
   selected: null,
   followBody: null,
   transitioning: false,
-  filter: 'all'
+  filter: 'all',
+  isolation: 0
 };
 
 /* ================================================================
@@ -158,6 +159,7 @@ function poiMarker(poi) {
 
 function selectPOI(poi) {
   state.selected = poi;
+  applyIsolation();
   ui.setTarget(poi.name);
   ui.setNavCurrent(poi.id, poi.name);
   ui.showPanel({
@@ -221,6 +223,7 @@ function setupSolarMode() {
 
 function selectBody(b) {
   state.selected = b;
+  applyIsolation();
   ui.setTarget(b.data.name);
 
   if (b.kind === 'sun') {
@@ -476,6 +479,25 @@ ui.el.speed.addEventListener('input', e => {
   ui.el.speedValue.textContent = state.daysPerSecond === 0
     ? 'PAUSA'
     : state.daysPerSecond + ' d/s';
+});
+
+const focusSlider = document.getElementById('focus');
+const focusValue = document.getElementById('focus-value');
+
+function applyIsolation() {
+  if (!solar) return;
+  if (state.mode === 'solar') {
+    solar.setFocus(state.selected?.obj, state.isolation);
+  } else if (state.mode === 'galaxy') {
+    galaxy.setFocus(state.selected, state.isolation);
+    landmarks.setFocus(state.selected, state.isolation);
+  }
+}
+
+focusSlider.addEventListener('input', e => {
+  state.isolation = Number(e.target.value) / 100;
+  focusValue.textContent = Math.round(state.isolation * 100) + '%';
+  applyIsolation();
 });
 
 /* Navegador de destinos */

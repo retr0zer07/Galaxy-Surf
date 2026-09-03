@@ -356,6 +356,27 @@ kbd {
   background: var(--cyan); cursor: pointer;
 }
 
+.focus {
+  padding: 10px 13px;
+  background: rgba(8,14,26,.7); backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 3px;
+  width: 178px;
+}
+.focus label {
+  display: block; font-size: 9px; letter-spacing: 2px; color: var(--cyan-dim);
+  text-transform: uppercase; margin-bottom: 8px; font-family: var(--mono);
+}
+.focus b { color: var(--gold); float: right; letter-spacing: 0; }
+.focus input { width: 100%; -webkit-appearance: none; height: 2px; background: rgba(255,255,255,.18); outline: none; }
+.focus input::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--gold); cursor: pointer; box-shadow: 0 0 10px var(--gold);
+}
+.focus input::-moz-range-thumb {
+  width: 11px; height: 11px; border: 0; border-radius: 50%;
+  background: var(--gold); cursor: pointer;
+}
+
 /* ---------- Fade / Loader / Hint ---------- */
 #fade {
   position: fixed; inset: 0; background: #03040a; z-index: 60;
@@ -400,5 +421,10 @@ kbd {
   .speed input { height: 18px; }
   .speed input::-webkit-slider-thumb { width: 18px; height: 18px; }
   .speed input::-moz-range-thumb { width: 18px; height: 18px; }
+  .focus { width: 148px; padding: 9px 11px; }
+  .focus label { font-size: 8.5px; margin-bottom: 7px; }
+  .focus input { height: 18px; }
+  .focus input::-webkit-slider-thumb { width: 18px; height: 18px; }
+  .focus input::-moz-range-thumb { width: 18px; height: 18px; }
   #hint { display: none; }
 }

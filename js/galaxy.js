@@ -455,8 +455,9 @@ export class Galaxy {
     };
     this.coreSize = 13;
     this.coreGlow = mk(this.coreSize, 0xffc477, 0.3, this.cloudTex);
-    mk(7, 0xfff0d0, 0.22, this.cloudTex);
+    this.coreInner = mk(7, 0xfff0d0, 0.22, this.cloudTex);
     this.coreFlare = mk(5.5, 0xffffff, 0.2, this.flareTex);
+    this.coreSprites = [this.coreGlow, this.coreInner, this.coreFlare];
   }
 
   /* --------------------------------------------------------------
@@ -529,6 +530,27 @@ export class Galaxy {
       if (obj.material?.uniforms?.uPixelRatio) obj.material.uniforms.uPixelRatio.value = pr;
     };
     this.group.traverse(apply);
+  }
+
+  setFocus(selectedPoi, isolation) {
+    const dim = 1 - isolation * 0.88;
+
+    for (const marker of this.markers) {
+      const material = marker.material;
+      if (material.userData.baseOpacity === undefined) material.userData.baseOpacity = material.opacity;
+      material.opacity = material.userData.baseOpacity * (marker.userData.poi === selectedPoi ? 1 : dim);
+    }
+
+    for (const material of this.materials) {
+      if (material.userData.baseOpacity === undefined) material.userData.baseOpacity = material.opacity;
+      material.opacity = material.userData.baseOpacity * dim;
+    }
+
+    for (const sprite of this.coreSprites) {
+      const material = sprite.material;
+      if (material.userData.baseOpacity === undefined) material.userData.baseOpacity = material.opacity;
+      material.opacity = material.userData.baseOpacity * dim;
+    }
   }
 
   dispose() {
