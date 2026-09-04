@@ -472,16 +472,12 @@ kbd {
   #navigator { left: 14px; right: 14px; width: auto; bottom: 62px; }
   .nav-list { max-height: 44vh; }
   .nav-foot { display: none; }
-  #view-tools { bottom: auto; top: 84px; right: 14px; }
-  .speed { display: block; width: 148px; padding: 9px 11px; }
-  .speed label { font-size: 8.5px; margin-bottom: 7px; }
-  .speed input { height: 18px; }
-  .speed input::-webkit-slider-thumb { width: 18px; height: 18px; }
-  .speed input::-moz-range-thumb { width: 18px; height: 18px; }
-  .focus { width: 148px; padding: 9px 11px; }
-  .focus label { font-size: 8.5px; margin-bottom: 7px; }
-  .focus input { height: 18px; }
-  .focus input::-webkit-slider-thumb { width: 18px; height: 18px; }
-  .focus input::-moz-range-thumb { width: 18px; height: 18px; }
+  #view-tools { bottom: auto; top: 132px; right: 14px; gap: 4px; }
+  #view-tools button { padding: 6px 9px; font-size: 8px; letter-spacing: 1.4px; }
+  .speed, .focus { width: 116px; padding: 6px 8px; margin-top: 1px; }
+  .speed label, .focus label { font-size: 7.5px; margin-bottom: 3px; letter-spacing: 1.3px; }
+  .speed input, .focus input { height: 14px; }
+  .speed input::-webkit-slider-thumb, .focus input::-webkit-slider-thumb { width: 14px; height: 14px; }
+  .speed input::-moz-range-thumb, .focus input::-moz-range-thumb { width: 14px; height: 14px; }
   #hint { display: none; }
 }
