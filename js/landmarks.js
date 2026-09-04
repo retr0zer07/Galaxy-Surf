@@ -79,7 +79,8 @@ export class Landmarks {
     this.flareTex = flareSprite();
 
     for (const poi of pois) {
-      if (poi.explorable) continue;      // estos tienen escena propia
+      // Orión conserva su nube visible en el mapa aunque tenga escena propia.
+      if (poi.explorable && poi.id !== 'orion') continue;
       const g = this.#build(poi);
       g.position.set(poi.position.x, poi.position.y, poi.position.z);
       this.group.add(g);
