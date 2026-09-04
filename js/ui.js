@@ -10,6 +10,7 @@ export class UI {
       panelAction: $('panel-action'), panelClose: $('panel-close'),
       back: $('btn-back'), fade: $('fade'),
       localGroup: $('btn-local-group'),
+      routes: $('btn-routes'),
       navigator: $('navigator'), navToggle: $('nav-toggle'), navCurrent: $('nav-current'),
       navInput: $('nav-input'), navList: $('nav-list'), navChips: $('nav-chips'),
       navCount: $('nav-count'),
@@ -277,6 +278,7 @@ export class UI {
   setMode(mode) {
     this.el.back.classList.toggle('hidden', mode === 'galaxy');
     this.el.localGroup.classList.toggle('hidden', mode !== 'galaxy');
+    this.el.routes.classList.toggle('hidden', mode !== 'galaxy');
     this.el.orbitsBtn.classList.toggle('hidden', mode !== 'solar');
   }
 }

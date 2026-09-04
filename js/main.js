@@ -13,6 +13,7 @@ import { OrionNebula } from './orion.js';
 import { LocalGroup } from './localgroup.js';
 import { Discoveries } from './discoveries.js';
 import { AlphaCentauri } from './alphacentauri.js';
+import { Routes } from './routes.js';
 import { UI } from './ui.js';
 import { POIS, CATEGORIES, SUN } from './data.js';
 import { easeInOut, clamp } from './utils.js';
@@ -54,6 +55,7 @@ let orion = null;
 let localGroup = null;
 let discoveries = null;
 let alphaCentauri = null;
+let routes = null;
 let scene = null;
 let composer, bloom, renderPass;
 
@@ -102,6 +104,7 @@ function boot() {
   alphaCentauriScene.add(alphaCentauri.group);
 
   discoveries = new Discoveries(POIS, CATEGORIES);
+  routes = new Routes(POIS, navigateRoute);
 
   scene = galaxyScene;
 
@@ -118,7 +121,7 @@ function boot() {
 
   ui.hideLoader();
   setTimeout(() => ui.hideHint(), 7000);
-  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, alphaCentauri, discoveries, state, camera, controls, renderer, bloom };
+  window.__gs = { galaxy, landmarks, solar, blackhole, orion, localGroup, alphaCentauri, discoveries, routes, state, camera, controls, renderer, bloom };
   animate();
 }
 
@@ -208,9 +211,24 @@ function selectPOI(poi) {
     actionLabel: poi.actionLabel || 'Explorar sistema'
   }, poi.explorable ? () => enterDestination(poi) : null);
 
-  // Encuadre proporcional al tamaño real del objeto
-  const dist = poi.explorable ? 11 : clamp(poi.size * 3.8, 0.9, 26);
+  // Todos los destinos se encuadran por tamaño visual; la exploración detallada
+  // empieza después, al pulsar la acción de la ficha.
+  const dist = clamp(poi.size * 3.8, 0.9, 8);
   flyTo(poiWorldPosition(poi), dist, 1.6, poiMarker(poi));
+}
+
+function navigateRoute(poi) {
+  if (state.mode === 'galaxy') {
+    selectPOI(poi);
+    ui.hidePanel();
+    return;
+  }
+
+  exitToGalaxy();
+  setTimeout(() => {
+    selectPOI(poi);
+    ui.hidePanel();
+  }, 900);
 }
 
 /* ================================================================

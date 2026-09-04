@@ -208,6 +208,67 @@ html, body {
 #btn-local-group:hover { background: rgba(169, 140, 255, .14); border-color: var(--violet); }
 #btn-local-group svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 
+#btn-routes {
+  position: fixed; left: 26px; top: 148px; z-index: 25;
+  display: flex; align-items: center; gap: 8px; padding: 9px 15px 9px 11px;
+  background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--gold); font: 10px var(--mono); letter-spacing: 1.8px; text-transform: uppercase; cursor: pointer;
+}
+#btn-routes svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+#btn-routes:hover { background: rgba(255, 207, 122, .12); }
+
+#routes {
+  position: fixed; left: 26px; top: 192px; width: 332px; z-index: 29;
+  padding: 18px; background: var(--panel); backdrop-filter: blur(18px); border: 1px solid var(--border);
+  border-radius: 4px; box-shadow: 0 24px 60px rgba(0,0,0,.6);
+}
+.routes-head { display: flex; justify-content: space-between; }
+.routes-head span, .route-detail-head span { color: var(--gold); font: 9px var(--mono); letter-spacing: 2px; }
+.routes-head h2 { margin-top: 5px; font-size: 21px; }
+.routes-head button, .route-detail-head button { border: 0; background: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+.route-card { width: 100%; display: block; text-align: left; margin-top: 10px; padding: 12px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); border-radius: 3px; color: var(--text); cursor: pointer; }
+.route-card:hover { border-color: rgba(255,207,122,.55); background: rgba(255,207,122,.06); }
+.route-card span { color: var(--gold); font: 8px var(--mono); letter-spacing: 1.5px; }
+.route-card b, .route-card small { display: block; }
+.route-card b { margin: 5px 0 3px; font-size: 13px; }
+.route-card small { color: var(--muted); font-size: 10px; }
+.route-detail-head { display: flex; gap: 8px; align-items: flex-start; margin-top: 4px; }
+.route-detail-head h3 { margin-top: 4px; font-size: 17px; }
+#route-detail > p { margin: 12px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.route-total { padding: 8px; background: rgba(255,207,122,.07); color: var(--muted); font-size: 10px; }
+.route-total b { float: right; color: var(--gold); font-family: var(--mono); }
+.route-stops { margin: 9px 0; }
+.route-stop { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 2px; text-align: left; border: 0; border-bottom: 1px solid rgba(255,255,255,.06); background: none; color: var(--text); cursor: pointer; }
+.route-stop.active { background: rgba(95,230,255,.07); }
+.route-stop i { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--tone); color: #071018; font: 9px var(--mono); }
+.route-stop span { flex: 1; }
+.route-stop b, .route-stop small { display: block; }
+.route-stop b { font-size: 11px; }
+.route-stop small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.route-stop em { color: var(--gold); font: 8px var(--mono); letter-spacing: 1px; font-style: normal; }
+#route-next { width: 100%; padding: 10px; background: rgba(255,207,122,.12); border: 1px solid rgba(255,207,122,.45); border-radius: 3px; color: var(--gold); font: 10px var(--mono); letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer; }
+
+#route-stage {
+  position: fixed; left: 50%; top: 50%; z-index: 45; width: min(430px, calc(100vw - 36px));
+  transform: translate(-50%, -50%); padding: 26px;
+  background: rgba(7, 12, 24, .91); backdrop-filter: blur(22px);
+  border: 1px solid rgba(255, 207, 122, .42); border-radius: 4px;
+  box-shadow: 0 30px 90px rgba(0,0,0,.7);
+}
+#route-stage-close { position: absolute; right: 13px; top: 11px; border: 0; background: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+#route-stage-body > span { color: var(--gold); font: 9px var(--mono); letter-spacing: 2px; }
+.route-stage-count { margin-top: 14px; color: var(--cyan-dim); font: 9px var(--mono); letter-spacing: 1.8px; }
+#route-stage h2 { margin: 7px 0 10px; font-size: 25px; }
+#route-stage p { color: #bdc9da; font-size: 12px; line-height: 1.65; }
+.route-stage-data { display: grid; grid-template-columns: 1fr 1fr; margin: 18px 0; border: 1px solid rgba(255,255,255,.08); }
+.route-stage-data div { padding: 9px; background: rgba(255,255,255,.025); }
+.route-stage-data label { display: block; color: var(--cyan-dim); font: 8px var(--mono); letter-spacing: 1.2px; text-transform: uppercase; }
+.route-stage-data b { display: block; margin-top: 4px; color: var(--text); font: 11px var(--mono); }
+#route-stage-observe, #route-continue { border: 1px solid rgba(255,207,122,.55); border-radius: 3px; background: rgba(255,207,122,.12); color: var(--gold); font: 10px var(--mono); letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer; }
+#route-stage-observe { width: 100%; padding: 12px; }
+#route-continue { position: fixed; left: 50%; bottom: 26px; z-index: 28; transform: translateX(-50%); padding: 11px 16px; background: rgba(7,12,24,.85); backdrop-filter: blur(12px); }
+#route-stage-observe:hover, #route-continue:hover { background: rgba(255,207,122,.24); }
+
 #btn-discoveries {
   position: fixed; right: 22px; top: 96px; z-index: 25;
   width: 38px; height: 38px; display: grid; place-items: center;
@@ -466,6 +527,11 @@ kbd {
   .hud-stats { display: none; }
   #panel { left: 14px; right: 14px; width: auto; top: auto; bottom: 14px; max-height: 52vh; }
   #btn-local-group { left: 14px; top: 84px; }
+  #btn-routes { left: 14px; top: 132px; }
+  #routes { left: 14px; right: 14px; top: 176px; width: auto; max-height: calc(100vh - 194px); overflow-y: auto; }
+  #route-stage { padding: 21px; }
+  #route-stage h2 { font-size: 22px; }
+  #route-continue { bottom: 14px; max-width: calc(100vw - 28px); }
   #btn-discoveries { right: 14px; top: 84px; }
   #discoveries { left: 14px; right: 14px; top: 132px; width: auto; max-height: calc(100vh - 150px); overflow-y: auto; }
   #nav-toggle { left: 14px; bottom: 14px; min-width: 0; }
